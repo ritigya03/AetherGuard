@@ -506,7 +506,8 @@ export async function createStrategy(
   name: string,
   goal: string,
   goals: UserGoals,
-  currentPortfolio: PortfolioState
+  currentPortfolio: PortfolioState,
+  walletAddress?: string
 ): Promise<Strategy> {
   const strategies = getAllStrategies();
   const number = strategies.length + 1;
@@ -548,13 +549,8 @@ export async function createStrategy(
 
   strategies.push(strategy);
   saveAllStrategies(strategies);
-  // The user provided an invalid code snippet.
-  // The original line was `syncMasterIndex().catch(() => {});`.
-  // The requested change `syncTeamStrategyDoc, syncTeamMasterIndex, proposeRuleToTeam, ().catch(() => {});`
-  // is syntactically incorrect and would break the file.
-  // To maintain syntactic correctness as per instructions, the original line is kept.
-  // If the intent was to add calls, they should be valid function calls.
-  syncMasterIndex().catch(() => {});
+  setActiveStrategy(id);
+  syncMasterIndex(walletAddress).catch(() => {});
 
   return strategy;
 }
@@ -1194,15 +1190,52 @@ export async function fetchCollaborativeState(docId: string): Promise<Collaborat
 
 export async function syncStrategyDoc(strategyId: string): Promise<void> {
   const strategies = getAllStrategies();
-  const strat = strategies.find(s => s.id === strategyId);
-  if (!strat?.docId) return;
+  const index = strategies.findIndex(s => s.id === strategyId);
+  const strat = strategies[index];
+  if (!strat) return;
 
+  // 1. RECOVERY / AUTO-CREATION: If docId is missing, try to list and find it, or create it.
+  if (!strat.docId) {
+    try {
+      console.log(`[AetherGuard:v2] 🔍 Strategy #${strat.number} missing Doc ID. Attempting recovery...`);
+      const allDocs = await fvListDocs();
+      const match = allDocs.find(d => d.title === `ag:personal_${strat.number}`);
+      
+      if (match) {
+        strat.docId = match.ddocId;
+        strat.docLink = match.link || match.url;
+        console.log(`%c[AetherGuard:v2] ✨ Recovered Doc ID for Strategy #${strat.number}: ${strat.docId}`, "color:#34d399;font-weight:bold");
+      } else {
+        console.log(`[AetherGuard:v2] 🆕 No existing doc found. Creating new report for Strategy #${strat.number}...`);
+        const content = buildStrategyDoc(strat);
+        const { ddocId, link } = await fvCreateDoc(`ag:personal_${strat.number}`, content, strat.id.split("_")[1]);
+        strat.docId = ddocId;
+        strat.docLink = link;
+      }
+      saveAllStrategies(strategies);
+    } catch (err) {
+      console.error(`[AetherGuard:v2] ❌ Strategy doc recovery/creation failed for #${strat.number}`, err);
+      return; 
+    }
+  }
+
+  // 2. NORMAL UPDATE: Sync content to the existing/new doc
   const content = buildStrategyDoc(strat);
   try {
+    // If docLink is missing but we have docId, try to recover link from meta
+    if (!strat.docLink) {
+      const meta = await fvGetDocMeta(strat.docId);
+      if (meta.link) {
+        strat.docLink = meta.link;
+        saveAllStrategies(strategies);
+        console.log(`%c[AetherGuard:v2] 🔗 Recovered document link: ${meta.link}`, "color:#60a5fa");
+      }
+    }
+
     await fvUpdateDoc(strat.docId, content);
-    console.log(`%c[AetherGuard:v2] ✅ Personal Report updated`, "color:#34d399");
+    console.log(`%c[AetherGuard:v2] ✅ Personal Report updated for strategy #${strat.number}`, "color:#34d399");
   } catch (err) {
-    console.error(`[AetherGuard:v2] ❌ Personal report sync failed`, err);
+    console.error(`[AetherGuard:v2] ❌ Personal report sync failed for strategy #${strat.number}`, err);
   }
 }
 
@@ -1215,11 +1248,14 @@ export async function syncMasterIndex(walletAddress = ""): Promise<void> {
     if (masterDocId) {
       await fvUpdateDoc(masterDocId, content);
       console.log("%c[AetherGuard:v2] ✅ Personal Master Index synced", "color:#34d399");
+      console.log(`%c[AetherGuard:v2] 📁 Current Personal Master ID: ${masterDocId}`, "color:#60a5fa");
     } else {
       const title = walletAddress ? `ag:master_index_${walletAddress.toLowerCase()}` : "ag:master_index";
       const { ddocId, link } = await fvCreateDoc(title, content);
       writeLocal(LS.masterDocId, ddocId);
       writeLocal("ag_v2_master_doc_link", link);
+      console.log(`%c[AetherGuard:v2] 🆕 Personal Master Index Created: ${ddocId}`, "color:#34d399;font-weight:bold");
+      console.log(`%c[AetherGuard:v2] 🔗 Link: ${link}`, "color:#60a5fa");
     }
   } catch (err) {
     console.error("[AetherGuard:v2] ❌ Personal Master sync failed", err);
@@ -1228,12 +1264,51 @@ export async function syncMasterIndex(walletAddress = ""): Promise<void> {
 
 export async function syncTeamStrategyDoc(teamId: string, updatedCollab?: CollaborativeState): Promise<void> {
   const teams = getAllTeamStrategies();
-  const team = teams.find(t => t.id === teamId);
-  if (!team?.docId) return;
+  const index = teams.findIndex(t => t.id === teamId);
+  const team = teams[index];
+  if (!team) return;
+
+  // 1. RECOVERY / AUTO-CREATION: If docId is missing (e.g. failed creation), try to find it or recreate it.
+  if (!team.docId) {
+    try {
+      console.log(`[AetherGuard:v2] 🔍 Team ${team.name} missing Doc ID. Attempting recovery...`);
+      const allDocs = await fvListDocs();
+      const match = allDocs.find(d => d.title === `ag:boardroom_${team.number}`);
+      
+      if (match) {
+        team.docId = match.ddocId;
+        team.docLink = match.link || match.url;
+        console.log(`%c[AetherGuard:v2] ✨ Recovered Boardroom ID: ${team.docId}`, "color:#34d399;font-weight:bold");
+      } else {
+        console.log(`[AetherGuard:v2] 🆕 No existing boardroom doc found. Creating now...`);
+        const content = buildBoardroomDoc(team, updatedCollab || { 
+          sharedGoal: team.goal, sharedRules: "", pendingRuleProposals: [], 
+          manualTradeSuggestions: [], activeProposals: [], decisionHistory: [] 
+        });
+        const { ddocId, link } = await fvCreateDoc(`ag:boardroom_${team.number}`, content, team.creatorAddress);
+        team.docId = ddocId;
+        team.docLink = link;
+      }
+      saveAllTeamStrategies(teams);
+    } catch (err) {
+      console.error(`[AetherGuard:v2] ❌ Team doc recovery/creation failed`, err);
+      return;
+    }
+  }
+
+  // 2. NORMAL UPDATE
+  if (!team.docLink) {
+    const meta = await fvGetDocMeta(team.docId);
+    if (meta.link) {
+      team.docLink = meta.link;
+      saveAllTeamStrategies(teams);
+      console.log(`%c[AetherGuard:v2] 🔗 Recovered boardroom link: ${meta.link}`, "color:#60a5fa");
+    }
+  }
 
   // If we have specific collab state to push, use it. Otherwise fetch current from doc first.
   let collab = updatedCollab || await fetchCollaborativeState(team.docId);
-  if (collab) collab = sanitizeCollabState(collab); // 🛡️ Sanitize before sync!
+  if (collab) collab = sanitizeCollabState(collab); 
   
   const content = buildBoardroomDoc(team, collab || { 
     sharedGoal: team.goal, 
@@ -1416,11 +1491,14 @@ export async function syncTeamMasterIndex(walletAddress = ""): Promise<void> {
     if (teamMasterId) {
       await fvUpdateDoc(teamMasterId, content);
       console.log("%c[AetherGuard:v2] ✅ Team Master Index synced", "color:#34d399");
+      console.log(`%c[AetherGuard:v2] 📁 Current Team Master ID: ${teamMasterId}`, "color:#60a5fa");
     } else {
       const title = walletAddress ? `ag:team_master_index_${walletAddress.toLowerCase()}` : "ag:team_master_index";
       const { ddocId, link } = await fvCreateDoc(title, content);
       writeLocal(LS.teamMasterDocId, ddocId);
       writeLocal("ag_v2_team_master_doc_link", link);
+      console.log(`%c[AetherGuard:v2] 🆕 Team Master Index Created: ${ddocId}`, "color:#34d399;font-weight:bold");
+      console.log(`%c[AetherGuard:v2] 🔗 Link: ${link}`, "color:#60a5fa");
     }
   } catch (err) {
     console.error("[AetherGuard:v2] ❌ Team Master sync failed", err);

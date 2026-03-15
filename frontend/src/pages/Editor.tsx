@@ -19,6 +19,8 @@ import {
   saveMultiSigConfig,
   getAllStrategies,
   getActiveStrategy,
+  setActiveStrategy,
+  getMasterDocLink,
   createStrategy,
   syncMasterIndex,
   type PortfolioState,
@@ -26,7 +28,17 @@ import {
   type Strategy,
   type MultiSigConfig,
 } from "@/lib/fileverseStore";
-import { PlusCircle, List, BookOpen, X, Sparkles } from "lucide-react";
+import { 
+  PlusCircle, 
+  List, 
+  BookOpen, 
+  X, 
+  Sparkles,
+  Layers,
+  Database,
+  Search,
+  ChevronRight
+} from "lucide-react";
 import type { TradeProposal } from "@/lib/claude";
 import type { ProofResult } from "@/lib/proof";
 
@@ -221,22 +233,19 @@ const Editor = () => {
 
         // Sync real on-chain balances into active strategy
         try {
-          const strat = getActiveStrategy();
-          if (strat) {
-            const provider = new ethers.BrowserProvider(window.ethereum as any);
-            const [{ testnet }, prices] = await Promise.all([
-              fetchDualChainBalances(provider, currentAccount),
-              fetchPrices(["ETH", "USDC", "WBTC"]),
-            ]);
-            const totalUsd = testnet.balances.reduce((sum, b) => {
-              const p = prices[b.symbol] ?? 0;
-              return sum + parseFloat(b.formatted) * p;
-            }, 0);
-            if (totalUsd > 0) {
-              const pf = getPortfolio();
-              pf.totalValueUsd = totalUsd;
-              setPortfolioState({ ...pf });
-            }
+          const provider = new ethers.BrowserProvider(window.ethereum as any);
+          const [{ testnet }, prices] = await Promise.all([
+            fetchDualChainBalances(provider, currentAccount),
+            fetchPrices(["ETH", "USDC", "WBTC"]),
+          ]);
+          const totalUsd = testnet.balances.reduce((sum, b) => {
+            const p = prices[b.symbol] ?? 0;
+            return sum + parseFloat(b.formatted) * p;
+          }, 0);
+          if (totalUsd > 0) {
+            const pf = getPortfolio();
+            pf.totalValueUsd = totalUsd;
+            setPortfolioState({ ...pf });
           }
         } catch (e) {
           console.warn("Real portfolio sync failed, using cached values", e);
@@ -267,7 +276,7 @@ const Editor = () => {
         preferredCategories: ["crypto"],
       };
 
-      await createStrategy(name, stratGoal, goals, portfolioState);
+      await createStrategy(name, stratGoal, goals, portfolioState, currentAccount);
       refreshStore();
       setNewStrategyOpen(false);
       setVaultTrigger(v => v + 1);
@@ -277,6 +286,13 @@ const Editor = () => {
     } finally {
       setIsCreatingStrategy(false);
     }
+  };
+
+  const handleSwitchStrategy = (id: string) => {
+    setActiveStrategy(id);
+    refreshStore();
+    setVaultTrigger(v => v + 1);
+    console.log(`[Editor] Switched to strategy ID: ${id}`);
   };
 
   const handleRulesChange = (value: string) => {
@@ -335,7 +351,7 @@ const Editor = () => {
   };
 
   const masterDocLink = activeStrategy
-    ? `http://127.0.0.1:8001/api/ddocs/${localStorage.getItem("ag_v2_master_doc_id") || ""}?apiKey=8R_TjebRrSkVT1YOx4ktUCrRLfwfwgz3`
+    ? getMasterDocLink()
     : null;
 
   return (
@@ -393,70 +409,138 @@ const Editor = () => {
           </div>
         </motion.div>
 
-        {activeStrategy ? (
-          <div className="grid grid-cols-1 lg:grid-cols-10 gap-6 min-h-[640px]">
-            <motion.div
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.5, delay: 0.1 }}
-              className="lg:col-span-7 flex flex-col"
-            >
-              <StrategyEditor
-                goal={goal}
-                rules={rules}
-                multiSig={{ multiSig }}
-                docLink={activeStrategy?.docLink}
-                onGoalChange={setGoal}
-                onRulesChange={handleRulesChange}
-                onMultiSigChange={(cfg) => handleMultiSigChange(cfg.multiSig || multiSig)}
-                strategyNumber={activeStrategy.number}
-                strategyName={activeStrategy.name}
-              />
-            </motion.div>
-
-            <motion.div
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.5, delay: 0.2 }}
-              className="lg:col-span-3 glass rounded-xl p-6"
-            >
-              <h3 className="font-display text-sm font-semibold tracking-wider text-primary mb-4 uppercase">
-                AI Agent
-              </h3>
-              <AgentPanel
-                goal={goal}
-                rules={rules}
-                portfolioState={portfolioState}
-                userGoals={userGoals}
-                multiSigConfig={multiSig}
-                onPortfolioUpdate={(pf) => { setPortfolioState(pf); refreshStore(); }}
-                onProofVerified={handleProofVerified}
-                onProofRejected={handleProofRejected}
-              />
-            </motion.div>
-          </div>
-        ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-[260px_1fr] gap-6">
+          {/* ── Left Sidebar: Registry ── */}
           <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="flex flex-col items-center justify-center min-h-[400px] gap-6 text-center"
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            className="flex flex-col gap-4"
           >
-            <BookOpen className="w-12 h-12 text-primary/40" />
-            <div>
-              <h2 className="font-display text-xl font-bold text-foreground">No Strategy Yet</h2>
-              <p className="text-sm text-muted-foreground mt-2 max-w-md">
-                Create your first strategy to get started. Each strategy gets its own dedicated Fileverse report tracking every AI proposal, rejection, and execution.
-              </p>
+            <div className="glass rounded-2xl p-4 border border-white/10 sticky top-24">
+              <div className="flex items-center justify-between mb-4 px-2">
+                <div className="flex items-center gap-2">
+                  <Layers className="w-3.5 h-3.5 text-primary" />
+                  <span className="text-[10px] font-bold text-primary uppercase tracking-widest leading-none">
+                    Registry
+                  </span>
+                </div>
+                <button
+                   onClick={() => setNewStrategyOpen(true)}
+                   className="p-1 rounded-md hover:bg-primary/10 text-primary transition-colors"
+                   title="New Strategy"
+                >
+                  <PlusCircle className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-1 custom-scrollbar">
+                {allStrategies.length === 0 ? (
+                  <div className="text-center py-8 opacity-40">
+                    <Database className="w-6 h-6 mx-auto mb-2" />
+                    <p className="text-[10px] uppercase font-bold tracking-tighter">Empty</p>
+                  </div>
+                ) : (
+                  allStrategies.map((s) => {
+                    const isActive = activeStrategy?.id === s.id;
+                    return (
+                      <button
+                        key={s.id}
+                        onClick={() => handleSwitchStrategy(s.id)}
+                        className={`w-full text-left p-3 rounded-xl border transition-all group ${
+                          isActive
+                            ? "bg-primary/10 border-primary/30 shadow-[0_0_12px_rgba(var(--primary-rgb),0.08)]"
+                            : "bg-white/5 border-white/5 hover:border-white/10"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className={`text-[11px] font-bold truncate ${isActive ? "text-primary" : "text-foreground/70 group-hover:text-foreground"}`}>
+                            {s.name}
+                          </span>
+                          {isActive && <div className="w-1 h-1 rounded-full bg-primary animate-pulse flex-shrink-0" />}
+                        </div>
+                        <div className="mt-1 flex items-center gap-1.5">
+                          <span className="text-[9px] font-mono text-muted-foreground/40 uppercase">#{s.number}</span>
+                          {isActive && <span className="text-[8px] font-black uppercase tracking-tighter text-primary/60">Active</span>}
+                        </div>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
             </div>
-            <button
-              onClick={() => setNewStrategyOpen(true)}
-              className="flex items-center gap-2 px-6 py-3 rounded-xl bg-primary text-primary-foreground font-bold hover:bg-primary/90 transition-colors"
-            >
-              <PlusCircle className="w-4 h-4" />
-              Create First Strategy
-            </button>
           </motion.div>
-        )}
+
+          {/* ── Main content ── */}
+          <div className="flex flex-col gap-6">
+            {activeStrategy ? (
+              <div className="grid grid-cols-1 lg:grid-cols-10 gap-6">
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.5 }}
+                  className="lg:col-span-7 flex flex-col"
+                >
+                  <StrategyEditor
+                    goal={goal}
+                    rules={rules}
+                    multiSig={{ multiSig }}
+                    docLink={activeStrategy?.docLink}
+                    onGoalChange={setGoal}
+                    onRulesChange={handleRulesChange}
+                    onMultiSigChange={(cfg) => handleMultiSigChange(cfg.multiSig || multiSig)}
+                    strategyNumber={activeStrategy.number}
+                    strategyName={activeStrategy.name}
+                  />
+                </motion.div>
+
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.5, delay: 0.1 }}
+                  className="lg:col-span-3 glass rounded-xl p-6"
+                >
+                  <h3 className="font-display text-sm font-semibold tracking-wider text-primary mb-4 uppercase">
+                    AI Agent
+                  </h3>
+                  <AgentPanel
+                    goal={goal}
+                    rules={rules}
+                    portfolioState={portfolioState}
+                    userGoals={userGoals}
+                    multiSigConfig={multiSig}
+                    onPortfolioUpdate={(pf) => {
+                      setPortfolioState(pf);
+                      refreshStore();
+                    }}
+                    onProofVerified={handleProofVerified}
+                    onProofRejected={handleProofRejected}
+                  />
+                </motion.div>
+              </div>
+            ) : (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="flex flex-col items-center justify-center min-h-[400px] gap-6 text-center"
+              >
+                <BookOpen className="w-12 h-12 text-primary/40" />
+                <div>
+                  <h2 className="font-display text-xl font-bold text-foreground">No Strategy Yet</h2>
+                  <p className="text-sm text-muted-foreground mt-2 max-w-md">
+                    Create your first strategy to get started. Each strategy gets its own dedicated Fileverse report tracking every AI proposal, rejection, and execution.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setNewStrategyOpen(true)}
+                  className="flex items-center gap-2 px-6 py-3 rounded-xl bg-primary text-primary-foreground font-bold hover:bg-primary/90 transition-colors"
+                >
+                  <PlusCircle className="w-4 h-4" />
+                  Create First Strategy
+                </button>
+              </motion.div>
+            )}
+          </div>
+        </div>
 
         <DataVault refreshTrigger={vaultTrigger} strategies={allStrategies} />
       </div>

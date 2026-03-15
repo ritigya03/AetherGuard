@@ -15,13 +15,17 @@ import {
   Settings,
   Search,
   Bot,
-  FileCode,
   Share2,
-  Copy,
   CheckCircle2,
   History,
   Database,
-  Globe
+  Globe,
+  Lock,
+  ChevronRight,
+  AlertCircle,
+  UserPlus,
+  Activity,
+  Layers,
 } from "lucide-react";
 import {
   getAllTeamStrategies,
@@ -45,12 +49,247 @@ import {
   setActiveTeamId,
   proposeTradeToTeam,
   getAgentContext,
+  hydrateFromFileverse,
   type TeamStrategy,
   type CollaborativeState,
-  type ActiveProposal
+  type ActiveProposal,
 } from "@/lib/fileverseStore";
 import { getTradeProposal, type TradeProposal } from "@/lib/claude";
 import { X, ThumbsUp, ArrowBigUp, Loader2 } from "lucide-react";
+
+// ─── Shared primitives ──────────────────────────────────────────────────────
+
+const Badge = ({
+  children,
+  variant = "default",
+  className = "",
+}: {
+  children: React.ReactNode;
+  variant?: "default" | "primary" | "green" | "red" | "orange";
+  className?: string;
+}) => {
+  const styles = {
+    default: "bg-white/5 border-white/10 text-muted-foreground",
+    primary: "bg-primary/10 border-primary/20 text-primary",
+    green: "bg-green-500/10 border-green-500/20 text-green-400",
+    red: "bg-red-500/10 border-red-500/20 text-red-400",
+    orange: "bg-orange-500/10 border-orange-500/20 text-orange-400",
+  };
+  return (
+    <span
+      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[9px] font-bold uppercase tracking-wider ${styles[variant]} ${className}`}
+    >
+      {children}
+    </span>
+  );
+};
+
+const SectionLabel = ({
+  icon: Icon,
+  children,
+  color = "text-primary",
+}: {
+  icon: React.ElementType;
+  children: React.ReactNode;
+  color?: string;
+}) => (
+  <div className={`flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] ${color}`}>
+    <Icon className="w-3.5 h-3.5" />
+    {children}
+  </div>
+);
+
+const EmptyState = ({
+  icon: Icon,
+  message,
+}: {
+  icon: React.ElementType;
+  message: string;
+}) => (
+  <div className="flex flex-col items-center justify-center py-6 gap-2 opacity-40">
+    <Icon className="w-6 h-6 text-muted-foreground" />
+    <p className="text-[10px] text-muted-foreground font-medium text-center leading-relaxed">
+      {message}
+    </p>
+  </div>
+);
+
+const Card = ({
+  children,
+  className = "",
+  glow = false,
+}: {
+  children: React.ReactNode;
+  className?: string;
+  glow?: boolean;
+}) => (
+  <div
+    className={`rounded-2xl border backdrop-blur-md ${
+      glow
+        ? "border-primary/30 bg-primary/5 shadow-[0_0_30px_rgba(var(--primary-rgb),0.07)]"
+        : "border-white/8 bg-white/[0.03]"
+    } ${className}`}
+  >
+    {children}
+  </div>
+);
+
+// ─── Sub-panels ──────────────────────────────────────────────────────────────
+
+type ProposeRulePanelProps = {
+  activeTeam: TeamStrategy;
+  userAddress: string;
+  onPropose: (val: string) => void;
+};
+
+const ProposeRulePanel = ({ onPropose }: ProposeRulePanelProps) => {
+  const [value, setValue] = useState("");
+  const submit = () => {
+    if (!value.trim()) return;
+    onPropose(value.trim());
+    setValue("");
+  };
+  return (
+    <Card className="p-4 space-y-3">
+      <SectionLabel icon={Shield} color="text-orange-400">
+        Propose Rule
+      </SectionLabel>
+      <textarea
+        rows={2}
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        placeholder="e.g. Max 5% stop-loss per position…"
+        className="w-full bg-black/30 border border-white/8 rounded-xl px-3 py-2.5 text-[11px] font-mono placeholder:text-white/20 focus:outline-none focus:border-primary/40 focus:ring-1 focus:ring-primary/10 transition-all resize-none leading-relaxed"
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            submit();
+          }
+        }}
+      />
+      <button
+        onClick={submit}
+        disabled={!value.trim()}
+        className="w-full py-2 rounded-xl bg-orange-500/10 border border-orange-500/20 text-orange-400 text-[10px] font-black uppercase tracking-widest hover:bg-orange-500/20 active:scale-[0.98] transition-all disabled:opacity-40"
+      >
+        Submit Proposal
+      </button>
+    </Card>
+  );
+};
+
+type SuggestTradePanelProps = {
+  activeTeam: TeamStrategy;
+  userAddress: string;
+  onSuggest: (val: string) => void;
+  onSummonAI: () => void;
+  isSummoning: boolean;
+  draftProposal: TradeProposal | null;
+  onPromoteDraft: () => void;
+  onDiscardDraft: () => void;
+};
+
+const SuggestTradePanel = ({
+  onSuggest,
+  onSummonAI,
+  isSummoning,
+  draftProposal,
+  onPromoteDraft,
+  onDiscardDraft,
+}: SuggestTradePanelProps) => {
+  const [value, setValue] = useState("");
+  const submit = () => {
+    if (!value.trim()) return;
+    onSuggest(value.trim());
+    setValue("");
+  };
+  return (
+    <Card className="p-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <SectionLabel icon={Zap} color="text-primary">
+          Suggest Trade
+        </SectionLabel>
+        <button
+          onClick={onSummonAI}
+          disabled={isSummoning}
+          className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-primary/10 border border-primary/20 text-primary text-[9px] font-bold hover:bg-primary/20 transition-all disabled:opacity-50"
+        >
+          {isSummoning ? (
+            <Loader2 className="w-2.5 h-2.5 animate-spin" />
+          ) : (
+            <Bot className="w-2.5 h-2.5" />
+          )}
+          {isSummoning ? "Consulting AI…" : "Ask AI"}
+        </button>
+      </div>
+
+      <textarea
+        rows={2}
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        placeholder="e.g. Rotate 20% ETH → WBTC…"
+        className="w-full bg-black/30 border border-white/8 rounded-xl px-3 py-2.5 text-[11px] font-mono placeholder:text-white/20 focus:outline-none focus:border-primary/40 focus:ring-1 focus:ring-primary/10 transition-all resize-none leading-relaxed"
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            submit();
+          }
+        }}
+      />
+      <button
+        onClick={submit}
+        disabled={!value.trim()}
+        className="w-full py-2 rounded-xl bg-primary/10 border border-primary/20 text-primary text-[10px] font-black uppercase tracking-widest hover:bg-primary/20 active:scale-[0.98] transition-all disabled:opacity-40"
+      >
+        Submit Suggestion
+      </button>
+
+      <AnimatePresence>
+        {draftProposal && (
+          <motion.div
+            initial={{ opacity: 0, y: 8, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            className="rounded-xl bg-primary/10 border border-primary/30 p-3.5 space-y-3"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <Bot className="w-3 h-3 text-primary" />
+                <span className="text-[9px] font-black text-primary uppercase tracking-wider">
+                  AI Draft
+                </span>
+              </div>
+              <button
+                onClick={onDiscardDraft}
+                className="p-0.5 rounded text-muted-foreground hover:text-foreground transition-all"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+            <div className="space-y-1.5">
+              <div className="text-[11px] font-bold text-foreground">
+                {draftProposal.action.toUpperCase()} {draftProposal.token} @{" "}
+                {draftProposal.allocationPercent}%
+              </div>
+              <p className="text-[10px] text-muted-foreground leading-relaxed italic">
+                "{draftProposal.reasoning.slice(0, 120)}…"
+              </p>
+            </div>
+            <button
+              onClick={onPromoteDraft}
+              className="w-full py-2 rounded-lg bg-primary text-primary-foreground text-[10px] font-black uppercase tracking-widest hover:brightness-110 active:scale-[0.98] transition-all flex items-center justify-center gap-1.5 shadow-lg shadow-primary/20"
+            >
+              <ArrowBigUp className="w-3.5 h-3.5" />
+              Promote to Boardroom
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </Card>
+  );
+};
+
+// ─── Main Component ──────────────────────────────────────────────────────────
 
 const Boardroom = () => {
   const [teams, setTeams] = useState<TeamStrategy[]>([]);
@@ -59,7 +298,6 @@ const Boardroom = () => {
   const [isSyncing, setIsSyncing] = useState(false);
   const [newTeamOpen, setNewTeamOpen] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
-  const [signedProposals, setSignedProposals] = useState<Record<string, string[]>>({});
   const [userAddress, setUserAddress] = useState("");
   const [isOpeningDoc, setIsOpeningDoc] = useState(false);
   const [isHydrating, setIsHydrating] = useState(false);
@@ -74,16 +312,14 @@ const Boardroom = () => {
   const [draftProposal, setDraftProposal] = useState<TradeProposal | null>(null);
   const [isSummoning, setIsSummoning] = useState(false);
 
+  // ── data helpers ──────────────────────────────────────────────────────────
+
   const refresh = () => {
     const all = getAllTeamStrategies();
     const active = getActiveTeam();
-    console.log(`[AetherGuard] 🔄 Refreshing state. Registry size: ${all.length}`, all.map(t => t.name));
     setTeams(all);
     setActiveTeam(active);
-    
-    // Auto-select first room if none is active
     if (!active && all.length > 0) {
-      console.log(`[AetherGuard] 🎯 Auto-selecting first room: ${all[0].name}`);
       setActiveTeamId(all[0].id);
       setActiveTeam(all[0]);
     }
@@ -91,47 +327,34 @@ const Boardroom = () => {
 
   useEffect(() => {
     const init = async () => {
-      // Force close any stuck modals on refresh
       setNewTeamOpen(false);
       setIsSyncing(false);
       setIsHydrating(false);
-
       const accounts = await (window as any).ethereum?.request({ method: "eth_accounts" });
       if (accounts?.[0]) {
         const addr = accounts[0].toLowerCase();
-        console.log("%c[AetherGuard] 🔌 Wallet Connected:", "color:#34d399;font-weight:bold", addr);
         setUserAddress(addr);
         const params = new URLSearchParams(window.location.search);
         const inviteDocId = params.get("invite");
         setIsHydrating(true);
         try {
-          console.log("[AetherGuard] 💧 Hydrating from Fileverse...");
           await hydrateFromFileverse(addr, inviteDocId || undefined);
         } finally {
           setIsHydrating(false);
-          const current = getAllTeamStrategies();
-          console.log(`[AetherGuard] 💧 Hydration finished. Found ${current.length} teams.`);
           refresh();
         }
       } else {
-        console.warn("[AetherGuard] ⚠️ No wallet accounts found.");
         refresh();
       }
     };
     init();
-
-    const handleBackgroundFound = () => {
-      console.log("%c[AetherGuard] 🚀 Background discovery update detected. Refreshing UI...", "color:#34d399;font-weight:bold");
-      refresh();
-    };
-    window.addEventListener("ag-discovery-found", handleBackgroundFound);
-    return () => window.removeEventListener("ag-discovery-found", handleBackgroundFound);
+    const handleBg = () => refresh();
+    window.addEventListener("ag-discovery-found", handleBg);
+    return () => window.removeEventListener("ag-discovery-found", handleBg);
   }, []);
 
   useEffect(() => {
-    if (activeTeam?.docId) {
-      handleSync();
-    }
+    if (activeTeam?.docId) handleSync();
   }, [activeTeam?.id]);
 
   const handleSync = async () => {
@@ -142,7 +365,7 @@ const Boardroom = () => {
       setCollab(state);
       if (state?.sharedGoal) setEditedGoal(state.sharedGoal);
     } catch (err) {
-      console.error("[AetherGuard:v2] Workspace Sync Error:", err);
+      console.error("[Boardroom] Sync error:", err);
     } finally {
       setIsSyncing(false);
     }
@@ -163,13 +386,8 @@ const Boardroom = () => {
     const comment = commentInputs[proposalId];
     if (!activeTeam?.docId || !userAddress || !comment) return;
     try {
-      await addCommentToProposal(
-        activeTeam.docId,
-        proposalId,
-        userAddress.slice(0, 6),
-        comment
-      );
-      setCommentInputs(prev => ({ ...prev, [proposalId]: "" }));
+      await addCommentToProposal(activeTeam.docId, proposalId, userAddress.slice(0, 6), comment);
+      setCommentInputs((prev) => ({ ...prev, [proposalId]: "" }));
       handleSync();
     } catch (err) {
       console.error("Comment failed", err);
@@ -215,13 +433,13 @@ const Boardroom = () => {
     try {
       const meta = await fvGetDocMeta(activeTeam.docId);
       const liveLink = meta.link;
-      if (liveLink && liveLink.startsWith("http")) {
+      if (liveLink?.startsWith("http")) {
         const all = getAllTeamStrategies();
-        const idx = all.findIndex(t => t.id === activeTeam.id);
+        const idx = all.findIndex((t) => t.id === activeTeam.id);
         if (idx !== -1 && !all[idx].docLink) {
           all[idx].docLink = liveLink;
           saveAllTeamStrategies(all);
-          setActiveTeam(prev => prev ? { ...prev, docLink: liveLink } : prev);
+          setActiveTeam((prev) => (prev ? { ...prev, docLink: liveLink } : prev));
         }
         window.open(liveLink, "_blank");
       } else {
@@ -238,19 +456,12 @@ const Boardroom = () => {
     if (!activeTeam?.docId) return;
     setIsSummoning(true);
     try {
-      console.log("[AetherGuard] 🤖 Summoning AI Agent with consensus context...");
       const context = getAgentContext(collab || undefined);
       const goalStr = collab?.sharedGoal || activeTeam.goal || "Optimize portfolio";
-      const proposal = await getTradeProposal(
-        goalStr,
-        "L2-Verified-Root",
-        [],
-        undefined,
-        context
-      );
+      const proposal = await getTradeProposal(goalStr, "L2-Verified-Root", [], undefined, context);
       setDraftProposal(proposal);
     } catch (err) {
-      console.error("Agent failed to respond", err);
+      console.error("Agent failed", err);
     } finally {
       setIsSummoning(false);
     }
@@ -259,7 +470,6 @@ const Boardroom = () => {
   const handlePromoteDraft = async () => {
     if (!activeTeam?.docId || !userAddress || !draftProposal) return;
     try {
-      console.log("[AetherGuard] 🚀 Promoting AI draft to multi-sig queue...");
       await proposeTradeToTeam(activeTeam.docId, userAddress, draftProposal);
       setDraftProposal(null);
       handleSync();
@@ -292,6 +502,9 @@ const Boardroom = () => {
       setUserAddress(myWallet);
       refresh();
       setNewTeamOpen(false);
+      setTeamName("");
+      setTeamGoal("");
+      setSigners([]);
     } finally {
       setIsCreating(false);
     }
@@ -312,7 +525,7 @@ const Boardroom = () => {
       votes: [],
       comments: [],
       status: "pending",
-      timestamp: new Date().toLocaleDateString()
+      timestamp: new Date().toLocaleDateString(),
     });
     collabState.manualTradeSuggestions.splice(i, 1);
     await syncTeamStrategyDoc(activeTeam.id, collabState);
@@ -341,47 +554,74 @@ const Boardroom = () => {
     handleSync();
   };
 
-  return (
-    <div className="relative min-h-screen pt-24 pb-12 z-0">
-      <div className="container mx-auto px-6 relative z-20 pointer-events-auto">
+  // ── render helpers ────────────────────────────────────────────────────────
 
+  const pendingProposals = collab?.activeProposals.filter((p) => p.status === "pending") ?? [];
+  const resolvedProposals =
+    collab?.activeProposals.filter((p) => p.status === "approved" || p.status === "rejected") ?? [];
+  const isOwner = userAddress && activeTeam?.creatorAddress === userAddress;
+
+  // ── render ────────────────────────────────────────────────────────────────
+
+  return (
+    <div className="relative min-h-screen pt-20 pb-16 z-0">
+      <ParticleBackground />
+
+      <div className="container mx-auto px-4 md:px-6 relative z-20">
+
+        {/* ── Page Header ── */}
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
+          initial={{ opacity: 0, y: -12 }}
           animate={{ opacity: 1, y: 0 }}
-          className="flex items-center justify-between mb-8"
+          transition={{ duration: 0.4 }}
+          className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-8"
         >
           <div>
-            <h1 className="font-display text-3xl font-bold text-foreground flex items-center gap-3">
-              <Users className="w-8 h-8 text-primary" />
-              Boardroom
-            </h1>
-            <p className="text-xs text-muted-foreground mt-1 font-display">
-              Collaborative multi-sig strategies & team coordination.
+            <div className="flex items-center gap-3 mb-1">
+              <div className="w-9 h-9 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center shadow-[0_0_16px_rgba(var(--primary-rgb),0.12)]">
+                <Users className="w-4.5 h-4.5 text-primary" />
+              </div>
+              <h1 className="font-display text-3xl font-black text-foreground tracking-tight leading-none">
+                Boardroom
+              </h1>
+            </div>
+            <p className="text-[10px] text-muted-foreground font-semibold uppercase tracking-[0.22em] opacity-50 ml-12">
+              Collaborative Multi-Sig Strategy Coordination
             </p>
           </div>
           <button
             onClick={() => setNewTeamOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary/10 text-primary font-display text-xs font-bold border border-primary/20 hover:bg-primary/20 transition-all"
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground font-display text-[11px] font-black uppercase tracking-widest hover:brightness-110 active:scale-95 transition-all shadow-lg shadow-primary/20 whitespace-nowrap"
           >
             <PlusCircle className="w-3.5 h-3.5" />
-            Establish New Team
+            New Team
           </button>
         </motion.div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          <div className="lg:col-span-3 space-y-4">
-            <div className="glass rounded-xl p-4 border border-white/5">
-              <h3 className="text-[10px] font-bold text-primary uppercase tracking-widest mb-3 flex items-center justify-between">
-                <span className="flex items-center gap-2">
-                  Team Registry
+        {/* ── Body grid: Sidebar + Main ── */}
+        <div className="grid grid-cols-1 lg:grid-cols-[260px_1fr] gap-5">
+
+          {/* ── Left Sidebar: Registry ── */}
+          <motion.div
+            initial={{ opacity: 0, x: -16 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.4, delay: 0.05 }}
+          >
+            <Card className="p-4 sticky top-24">
+              {/* Registry header */}
+              <div className="flex items-center justify-between mb-5">
+                <div className="flex items-center gap-2">
+                  <Layers className="w-3.5 h-3.5 text-primary" />
+                  <span className="text-[10px] font-black text-primary uppercase tracking-[0.2em]">
+                    Registry
+                  </span>
                   {teams.length > 0 && (
-                    <span className="px-1.5 py-0.5 rounded-md bg-primary/20 text-primary border border-primary/20 animate-pulse">
+                    <span className="px-1.5 py-0.5 rounded-md bg-primary/10 border border-primary/20 text-primary text-[9px] font-bold">
                       {teams.length}
                     </span>
                   )}
-                </span>
-                <div className="flex gap-3">
-                  {isHydrating && <RefreshCw className="w-3 h-3 animate-spin text-primary" />}
+                </div>
+                <div className="flex gap-1.5">
                   <button
                     onClick={async () => {
                       if (!userAddress) return;
@@ -393,242 +633,295 @@ const Boardroom = () => {
                         refresh();
                       }
                     }}
-                    className={`flex items-center gap-1 hover:text-white transition-colors ${teams.length === 0 ? "animate-pulse text-primary font-black" : ""}`}
-                    title="Deep Search Portal"
+                    title="Scan Network"
+                    className="p-1.5 rounded-lg bg-white/5 border border-white/8 hover:bg-white/10 transition-all text-muted-foreground hover:text-primary"
                   >
-                    <Search className="w-3 h-3" />
-                    <span className="text-[8px] tracking-tighter">FIND</span>
+                    <Search className={`w-3 h-3 ${isHydrating ? "animate-pulse" : ""}`} />
                   </button>
                   <button
                     onClick={async () => {
-                      if (!confirm("NUCLEAR RESET: This will wipe all local boardroom data and re-sync fresh from Fileverse. Fixes most ID and sync issues. Continue?")) return;
-                      clearTeamRegistry();
+                      if (!confirm("NUCLEAR RESET: Wipe all local boardroom data and re-sync from Fileverse?")) return;
                       setIsHydrating(true);
                       try {
                         await hydrateFromFileverse(userAddress, undefined, true);
-                        // Force a reload to ensure clean state
                         window.location.reload();
                       } finally {
                         setIsHydrating(false);
                       }
                     }}
-                    className="flex items-center gap-1 hover:text-primary transition-colors animate-pulse"
-                    title="Nuclear Sync Reset (Wipes Cache & Re-scans)"
+                    title="Reset Cache"
+                    className="p-1.5 rounded-lg bg-red-500/10 border border-red-500/20 hover:bg-red-500/20 transition-all text-red-400"
                   >
-                    <Trash2 className="w-3 h-3 text-red-500" />
-                    <span className="text-[8px] tracking-tighter text-red-500 font-bold">NUCLEAR</span>
+                    <Trash2 className="w-3 h-3" />
                   </button>
                 </div>
-              </h3>
-              <div className="space-y-2">
-                {console.log(`[AetherGuard] UI Rendering: ${teams.length} teams in registry state.`)}
-                {teams.length === 0 ? (
-                  <div className="py-8 text-center space-y-3">
-                    <div className="flex justify-center">
-                      <div className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center">
-                        <Globe className="w-4 h-4 text-white/20" />
-                      </div>
-                    </div>
-                    <p className="text-[10px] text-muted-foreground px-4 leading-relaxed">
-                      {isHydrating 
-                        ? "Deep scanning portal for boardrooms where you are a signer..." 
-                        : "No boardrooms found locally. Click the pulsing Search icon above to scan the network."}
-                    </p>
-                  </div>
-                ) : (
-                  teams.map(t => (
-                    <button
-                      key={t.id}
-                      onClick={() => {
-                        setActiveTeamId(t.id);
-                        refresh();
-                      }}
-                      className={`w-full text-left px-3 py-2.5 rounded-lg border transition-all ${
-                        activeTeam?.id === t.id
-                          ? "bg-primary/10 border-primary/30 text-primary"
-                          : "bg-white/5 border-white/5 text-muted-foreground hover:bg-white/10"
-                      }`}
-                    >
-                      <div className="text-xs font-bold truncate">{t.name || `Boardroom #${t.number}`}</div>
-                      <div className="text-[9px] opacity-70 mt-0.5">{t.multiSig?.signers?.length || 0} Signers</div>
-                    </button>
-                  ))
-                )}
               </div>
-            </div>
-          </div>
 
-          <div className="lg:col-span-9">
-            {activeTeam ? (
-              <div key={activeTeam.id} className="grid grid-cols-1 lg:grid-cols-9 gap-6">
-                <div className="lg:col-span-6 space-y-6">
-                  <div className="glass rounded-2xl border border-primary/30 overflow-hidden flex flex-col min-h-[500px]">
-                    <div className="flex items-center justify-between px-6 py-4 border-b border-primary/20 bg-primary/5">
-                      <div className="flex items-center gap-3">
-                        <Shield className="w-5 h-5 text-primary" />
-                        <div>
-                          <h2 className="text-sm font-bold text-foreground">Boardroom Workspace</h2>
-                          <div className="text-[10px] text-primary font-medium uppercase">{activeTeam.name}</div>
-                          {activeTeam.creatorAddress && (
-                            <div className={`mt-0.5 inline-flex items-center gap-1 text-[9px] font-mono px-1.5 py-0.5 rounded-full border ${
-                              userAddress && activeTeam.creatorAddress === userAddress
-                                ? "bg-green-500/10 border-green-500/20 text-green-400"
-                                : "bg-white/5 border-white/10 text-muted-foreground"
-                            }`}>
-                              {userAddress && activeTeam.creatorAddress === userAddress
-                                ? "👑 You own this"
-                                : `Owner: ${activeTeam.creatorAddress.slice(0, 6)}...${activeTeam.creatorAddress.slice(-4)}`}
-                            </div>
+              {/* Team list */}
+              <div className="space-y-2">
+                {teams.length === 0 ? (
+                  <EmptyState
+                    icon={Globe}
+                    message={isHydrating ? "Deep scanning network…" : "No boardrooms found. Use search to scan."}
+                  />
+                ) : (
+                  teams.map((t) => {
+                    const isActive = activeTeam?.id === t.id;
+                    return (
+                      <button
+                        key={t.id}
+                        onClick={() => {
+                          setActiveTeamId(t.id);
+                          refresh();
+                        }}
+                        className={`w-full group text-left px-3.5 py-3.5 rounded-xl transition-all border ${
+                          isActive
+                            ? "bg-primary/10 border-primary/25 shadow-[0_0_12px_rgba(var(--primary-rgb),0.08)]"
+                            : "bg-white/[0.03] border-white/5 hover:bg-white/[0.06] hover:border-white/10"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span
+                            className={`text-[11px] font-black tracking-tight truncate ${
+                              isActive ? "text-primary" : "text-foreground"
+                            }`}
+                          >
+                            {t.name || `TEAM_${t.number}`}
+                          </span>
+                          {isActive ? (
+                            <div className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse flex-shrink-0" />
+                          ) : (
+                            <ChevronRight className="w-3 h-3 text-muted-foreground/30 group-hover:text-muted-foreground/60 flex-shrink-0 transition-all" />
                           )}
                         </div>
+                        <div className="mt-1 flex items-center gap-2">
+                          <span className="text-[9px] font-mono text-muted-foreground/40 uppercase">
+                            {t.multiSig?.signers?.length || 0} signers
+                          </span>
+                          {isActive && (
+                            <Badge variant="primary">Active</Badge>
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            </Card>
+          </motion.div>
+
+          {/* ── Right: Workspace ── */}
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, delay: 0.1 }}
+          >
+            {activeTeam ? (
+              <div className="space-y-5">
+
+                {/* ── Workspace Header ── */}
+                <Card glow className="px-5 py-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="flex items-center gap-3.5">
+                      <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center flex-shrink-0">
+                        <Shield className="w-5 h-5 text-primary" />
                       </div>
-                      <div className="flex items-center gap-3">
+                      <div>
+                        <div className="flex items-center gap-2.5 flex-wrap">
+                          <h2 className="text-sm font-black text-foreground uppercase tracking-widest leading-none">
+                            {activeTeam.name}
+                          </h2>
+                          {isOwner && <Badge variant="green">Owner</Badge>}
+                          {activeTeam.creatorAddress && !isOwner && (
+                            <Badge>
+                              {activeTeam.creatorAddress.slice(0, 6)}…{activeTeam.creatorAddress.slice(-4)}
+                            </Badge>
+                          )}
+                        </div>
+                        <p className="text-[10px] text-muted-foreground/50 mt-0.5 font-medium uppercase tracking-wider">
+                          Boardroom Workspace
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {/* Sync controls */}
+                      <div className="flex items-center bg-black/30 rounded-xl p-1 border border-white/5 gap-0.5">
                         <button
                           onClick={async () => {
-                             if (!activeTeam?.id || !collab) return;
-                             setIsSyncing(true);
-                             try {
-                                await syncTeamStrategyDoc(activeTeam.id, collab);
-                                console.log("%c[AetherGuard] 🚀 Forced professional template sync triggered.", "color:#34d399;font-weight:bold");
-                                // Wait a bit for portal to catch up
-                                setTimeout(handleSync, 1000);
-                             } finally {
-                                setIsSyncing(false);
-                             }
+                            if (!activeTeam?.id || !collab) return;
+                            setIsSyncing(true);
+                            try {
+                              await syncTeamStrategyDoc(activeTeam.id, collab);
+                              setTimeout(handleSync, 1000);
+                            } finally {
+                              setIsSyncing(false);
+                            }
                           }}
                           disabled={isSyncing}
-                          className="p-2 rounded-lg bg-primary/10 border border-primary/20 text-primary hover:bg-primary/20 transition-all disabled:opacity-50"
-                          title="Force Professional Template Upgrade"
+                          title="Force template update"
+                          className="p-2 rounded-lg hover:bg-white/5 text-muted-foreground hover:text-primary transition-all disabled:opacity-50"
                         >
                           <Database className={`w-3.5 h-3.5 ${isSyncing ? "animate-pulse" : ""}`} />
                         </button>
                         <button
                           onClick={handleSync}
                           disabled={isSyncing}
-                          className="p-2 rounded-lg bg-white/5 border border-white/10 text-muted-foreground hover:text-primary transition-all disabled:opacity-50"
-                          title="Refresh Consensus"
+                          title="Refresh"
+                          className="p-2 rounded-lg hover:bg-white/5 text-muted-foreground hover:text-primary transition-all disabled:opacity-50"
                         >
                           <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? "animate-spin" : ""}`} />
                         </button>
-                        <button
-                          onClick={handleShareLink}
-                          className="p-2 rounded-lg bg-white/5 border border-white/10 text-muted-foreground hover:text-primary transition-all flex items-center gap-2"
-                          title="Copy Invite Link"
-                        >
-                          {copiedId === "share" ? (
-                            <>
-                              <CheckCircle2 className="w-3.5 h-3.5 text-green-400" />
-                              <span className="text-[10px] font-bold text-green-400">Copied!</span>
-                            </>
-                          ) : (
-                            <Share2 className="w-3.5 h-3.5" />
-                          )}
-                        </button>
-                        <button
-                          onClick={handleOpenDoc}
-                          disabled={isOpeningDoc}
-                          className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-[10px] font-bold hover:bg-primary/90 transition-all font-display disabled:opacity-70"
-                        >
-                          {isOpeningDoc ? (
-                            <RefreshCw className="w-3 h-3 animate-spin" />
-                          ) : (
-                            <ExternalLink className="w-3 h-3" />
-                          )}
-                          {isOpeningDoc ? "Opening..." : "Open dDoc"}
-                        </button>
                       </div>
+
+                      <button
+                        onClick={handleShareLink}
+                        className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/5 border border-white/8 text-muted-foreground hover:text-white hover:border-white/15 transition-all"
+                      >
+                        {copiedId === "share" ? (
+                          <CheckCircle2 className="w-3.5 h-3.5 text-green-400" />
+                        ) : (
+                          <Share2 className="w-3.5 h-3.5" />
+                        )}
+                        <span className="text-[10px] font-black uppercase tracking-widest">
+                          {copiedId === "share" ? "Copied!" : "Invite"}
+                        </span>
+                      </button>
+
+                      <button
+                        onClick={handleOpenDoc}
+                        disabled={isOpeningDoc}
+                        className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-primary text-primary-foreground text-[10px] font-black uppercase tracking-widest hover:brightness-110 active:scale-95 transition-all shadow-md shadow-primary/20 disabled:opacity-60"
+                      >
+                        {isOpeningDoc ? (
+                          <RefreshCw className="w-3 h-3 animate-spin" />
+                        ) : (
+                          <ExternalLink className="w-3 h-3" />
+                        )}
+                        Open dDoc
+                      </button>
                     </div>
+                  </div>
 
-                    <div className="p-6 space-y-8 flex-1">
-                      <div className="space-y-3">
-                        <div className="flex items-center justify-between">
-                          <label className="text-[10px] font-bold text-primary uppercase tracking-widest flex items-center gap-2">
-                            <TrendingUp className="w-3 h-3" /> Current Consensus Goal
-                          </label>
-                          <button
-                            onClick={() => setIsEditingGoal(!isEditingGoal)}
-                            className="text-[9px] text-primary hover:underline"
-                          >
-                            {isEditingGoal ? "Cancel" : "Edit Goal"}
-                          </button>
-                        </div>
-                        <div className="p-4 rounded-xl bg-primary/5 border border-primary/10 min-h-[80px] flex flex-col justify-center">
-                          {isSyncing ? (
-                            <div className="flex items-center gap-2 text-xs text-muted-foreground animate-pulse">
-                              <RefreshCw className="w-3 h-3 animate-spin" />
-                              <span>Fetching dDoc consensus...</span>
-                            </div>
-                          ) : isEditingGoal ? (
-                            <div className="space-y-3">
-                              <textarea
-                                value={editedGoal}
-                                onChange={e => setEditedGoal(e.target.value)}
-                                className="w-full bg-black/40 border border-primary/30 rounded-lg p-3 text-sm focus:outline-none"
-                                rows={3}
-                              />
-                              <button
-                                onClick={handleUpdateGoal}
-                                className="px-3 py-1.5 bg-primary text-primary-foreground text-[10px] font-bold rounded-lg"
-                              >
-                                Update Team Goal
-                              </button>
-                            </div>
-                          ) : collab?.sharedGoal ? (
-                            <p className="text-sm text-foreground leading-relaxed italic">"{collab.sharedGoal}"</p>
-                          ) : (
-                            <div className="flex flex-col items-center justify-center py-4 text-muted-foreground">
-                              <Search className="w-5 h-5 mb-2 opacity-20" />
-                              <p className="text-[10px]">No goal defined yet in dDoc</p>
-                            </div>
-                          )}
-                        </div>
+                  {/* Live indicator */}
+                  <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between">
+                    <span className="text-[9px] text-muted-foreground/40 font-medium">
+                      Powered by Fileverse dDocs
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+                      <span className="text-[9px] text-green-500 font-bold uppercase tracking-wider">
+                        Live Sync
+                      </span>
+                    </div>
+                  </div>
+                </Card>
+
+                {/* ── 2-column grid: Main content + Sidebar ── */}
+                <div className="grid grid-cols-1 xl:grid-cols-[1fr_280px] gap-5">
+
+                  {/* ── Main content column ── */}
+                  <div className="space-y-5">
+
+                    {/* Consensus Goal */}
+                    <Card className="p-5 space-y-4">
+                      <div className="flex items-center justify-between">
+                        <SectionLabel icon={TrendingUp} color="text-primary">
+                          Consensus Goal
+                        </SectionLabel>
+                        <button
+                          onClick={() => {
+                            setIsEditingGoal(!isEditingGoal);
+                            if (!isEditingGoal)
+                              setEditedGoal(collab?.sharedGoal || activeTeam.goal || "");
+                          }}
+                          className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/5 border border-white/8 text-[9px] font-bold uppercase tracking-wider text-muted-foreground hover:text-primary hover:border-primary/20 transition-all"
+                        >
+                          <Settings className="w-2.5 h-2.5" />
+                          {isEditingGoal ? "Cancel" : "Modify"}
+                        </button>
                       </div>
 
-                      <div className="space-y-3">
-                        <label className="text-[10px] font-bold text-destructive uppercase tracking-widest flex items-center gap-2">
-                          <Shield className="w-3 h-3" /> Shared Governing Rules
-                        </label>
-                        <div className="p-4 rounded-xl bg-destructive/5 border border-destructive/10 min-h-[60px] font-mono whitespace-pre-wrap">
-                          <p className="text-xs text-foreground/80 leading-relaxed">
-                            {collab?.sharedRules || "No rules established yet. Propose rules below."}
-                          </p>
+                      {isSyncing ? (
+                        <div className="flex items-center gap-2.5 py-4 text-xs text-primary font-bold animate-pulse">
+                          <RefreshCw className="w-4 h-4 animate-spin" />
+                          <span className="uppercase tracking-widest text-[10px]">Hydrating Consensus…</span>
                         </div>
-                      </div>
+                      ) : isEditingGoal ? (
+                        <div className="space-y-3">
+                          <textarea
+                            value={editedGoal}
+                            onChange={(e) => setEditedGoal(e.target.value)}
+                            rows={3}
+                            placeholder="Define the team's primary objective…"
+                            className="w-full bg-black/30 border border-primary/20 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary/40 focus:ring-1 focus:ring-primary/15 transition-all leading-relaxed resize-none"
+                          />
+                          <div className="flex justify-end">
+                            <button
+                              onClick={handleUpdateGoal}
+                              className="px-5 py-2 bg-primary text-primary-foreground text-[10px] font-black uppercase tracking-widest rounded-xl shadow-md shadow-primary/20 hover:brightness-110 active:scale-95 transition-all"
+                            >
+                              Publish Goal
+                            </button>
+                          </div>
+                        </div>
+                      ) : collab?.sharedGoal ? (
+                        <blockquote className="text-sm text-white/80 leading-relaxed font-medium italic border-l-2 border-primary/30 pl-4 py-1">
+                          "{collab.sharedGoal}"
+                        </blockquote>
+                      ) : (
+                        <EmptyState icon={AlertCircle} message="No goal published yet. Use Modify to set the team's direction." />
+                      )}
+                    </Card>
 
-                      <div className="space-y-3">
-                        <label className="text-[10px] font-bold text-orange-400 uppercase tracking-widest flex items-center gap-2">
-                          <RefreshCw className="w-3 h-3" />
-                          Pending Proposals & Voting
-                        </label>
+                    {/* Governing Rules */}
+                    <Card className="p-5 space-y-4">
+                      <SectionLabel icon={Lock} color="text-red-400">
+                        Governing Rules
+                      </SectionLabel>
+                      <div className="rounded-xl bg-black/30 border border-red-500/10 p-4 font-mono text-[12px] text-foreground/70 leading-relaxed min-h-[60px]">
+                        {collab?.sharedRules ||
+                          "No rules established yet. Teams must propose and reach consensus to lock governing logic."}
+                      </div>
+                    </Card>
+
+                    {/* Pending Rule Proposals */}
+                    <Card className="p-5 space-y-4">
+                      <SectionLabel icon={RefreshCw} color="text-orange-400">
+                        Pending Rule Proposals
+                      </SectionLabel>
+                      {!collab?.pendingRuleProposals.length ? (
+                        <EmptyState icon={AlertCircle} message="No pending rule proposals." />
+                      ) : (
                         <div className="space-y-2">
-                          {!collab?.pendingRuleProposals.length && (
-                            <div className="p-4 rounded-xl bg-white/5 border border-white/5 text-[10px] text-muted-foreground italic">
-                              No pending rule proposals.
-                            </div>
-                          )}
-                          {collab?.pendingRuleProposals.map((p, i) => (
-                            <div key={i} className="p-3 rounded-xl bg-white/5 border border-white/5 space-y-2">
-                              <div className="text-[10px] text-foreground font-mono leading-relaxed">"{p.rule}"</div>
-                              <div className="flex items-center justify-between">
-                                <div className="text-[8px] text-muted-foreground uppercase flex items-center gap-1">
-                                  By {p.author} • {p.timestamp}
-                                </div>
+                          {collab.pendingRuleProposals.map((p, i) => (
+                            <div
+                              key={i}
+                              className="p-3.5 rounded-xl bg-white/[0.03] border border-white/8 space-y-2.5"
+                            >
+                              <p className="text-[11px] text-foreground/80 font-mono leading-relaxed">
+                                "{p.rule}"
+                              </p>
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-[9px] text-muted-foreground/50 uppercase">
+                                  {p.author} · {p.timestamp}
+                                </span>
                                 <div className="flex items-center gap-2">
                                   <button
                                     onClick={() => handleToggleReaction(i)}
-                                    className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[8px] font-bold border transition-all ${
-                                      p.reactions.some(r => r.includes(userAddress.slice(0, 6)))
-                                        ? "bg-primary/20 border-primary/30 text-primary"
-                                        : "bg-white/5 border-white/5 text-muted-foreground hover:bg-white/10"
+                                    className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[9px] font-bold border transition-all ${
+                                      p.reactions.some((r) => r.includes(userAddress.slice(0, 6)))
+                                        ? "bg-primary/15 border-primary/25 text-primary"
+                                        : "bg-white/5 border-white/8 text-muted-foreground hover:bg-white/10"
                                     }`}
                                   >
                                     <ThumbsUp className="w-2.5 h-2.5" />
-                                    +1 ({p.reactions.length})
+                                    {p.reactions.length}
                                   </button>
                                   {p.reactions.length >= activeTeam.multiSig.threshold && (
                                     <button
                                       onClick={() => handlePromoteRule(i)}
-                                      className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[8px] font-bold bg-green-500/20 border border-green-500/30 text-green-400 hover:bg-green-500/30"
+                                      className="flex items-center gap-1 px-2 py-1 rounded-lg text-[9px] font-bold bg-green-500/15 border border-green-500/25 text-green-400 hover:bg-green-500/25 transition-all"
                                     >
                                       <ArrowBigUp className="w-2.5 h-2.5" />
                                       Promote
@@ -639,190 +932,222 @@ const Boardroom = () => {
                             </div>
                           ))}
                         </div>
-                      </div>
-
-                      {collab?.activeProposals && collab.activeProposals.filter(p => p.status === "approved" || p.status === "rejected").length > 0 && (
-                        <div className="space-y-3">
-                          <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-2">
-                            <History className="w-3 h-3" />
-                            Execution & Decision History
-                          </label>
-                          <div className="overflow-x-auto rounded-xl border border-white/5">
-                            <table className="w-full text-left text-xs">
-                              <thead>
-                                <tr className="bg-white/5 border-b border-white/10">
-                                  <th className="px-4 py-2 text-[9px] text-muted-foreground uppercase">Date</th>
-                                  <th className="px-4 py-2 text-[9px] text-muted-foreground uppercase">Rule</th>
-                                  <th className="px-4 py-2 text-[9px] text-muted-foreground uppercase">Status</th>
-                                  <th className="px-4 py-2 text-[9px] text-muted-foreground uppercase">Author</th>
-                                  <th className="px-4 py-2 text-[9px] text-muted-foreground uppercase">Votes</th>
-                                  <th className="px-4 py-2 text-[9px] text-muted-foreground uppercase">Tx</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {collab.activeProposals
-                                  .filter(p => p.status === "approved" || p.status === "rejected")
-                                  .map(p => (
-                                    <tr key={p.id} className="border-b border-white/5 bg-white/5">
-                                      <td className="px-4 py-3 text-muted-foreground">{p.timestamp.split(",")[0]}</td>
-                                      <td className="px-4 py-3 font-medium text-foreground">{p.title}</td>
-                                      <td className="px-4 py-3">
-                                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
-                                          p.status === "approved"
-                                            ? "bg-green-500/10 text-green-400"
-                                            : "bg-red-500/10 text-red-400"
-                                        }`}>
-                                          {p.status}
-                                        </span>
-                                      </td>
-                                      <td className="px-4 py-3 text-muted-foreground font-mono">{p.proposedBy.slice(0, 6)}...</td>
-                                      <td className="px-4 py-3 text-muted-foreground">{p.votes.length} Votes</td>
-                                      <td className="px-4 py-3 font-mono text-[10px] text-primary">Tx: 0x...</td>
-                                    </tr>
-                                  ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        </div>
                       )}
+                    </Card>
 
-                      <div className="space-y-3">
-                        <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-2">
-                          <Zap className="w-3 h-3" />
-                          Manual Trade Suggestions
-                        </label>
+                    {/* Manual Trade Suggestions */}
+                    <Card className="p-5 space-y-4">
+                      <SectionLabel icon={Zap} color="text-muted-foreground">
+                        Manual Suggestions
+                      </SectionLabel>
+                      {!collab?.manualTradeSuggestions.length ? (
+                        <EmptyState icon={Zap} message="No manual suggestions yet." />
+                      ) : (
                         <div className="space-y-2">
-                          {!collab?.manualTradeSuggestions.length && (
-                            <div className="p-4 rounded-xl bg-white/5 border border-white/5 text-[10px] text-muted-foreground italic">
-                              No manual suggestions yet.
-                            </div>
-                          )}
-                          {collab?.manualTradeSuggestions.map((s, i) => (
-                            <div key={i} className="p-3 rounded-xl bg-white/5 border border-white/5 flex items-center justify-between gap-3">
-                              <div className="space-y-1 overflow-hidden">
-                                <div className="text-[10px] text-foreground/70 truncate">{s.suggestion}</div>
-                                <div className="text-[8px] text-muted-foreground/50 uppercase">
-                                  By {s.author} • {s.timestamp}
-                                </div>
+                          {collab.manualTradeSuggestions.map((s, i) => (
+                            <div
+                              key={i}
+                              className="p-3.5 rounded-xl bg-white/[0.03] border border-white/8 flex items-center justify-between gap-3"
+                            >
+                              <div className="overflow-hidden">
+                                <p className="text-[11px] text-foreground/70 truncate">{s.suggestion}</p>
+                                <p className="text-[9px] text-muted-foreground/40 uppercase mt-0.5">
+                                  {s.author} · {s.timestamp}
+                                </p>
                               </div>
                               <button
                                 onClick={() => handlePromoteManualSuggestion(i)}
-                                className="px-2 py-1 rounded bg-white/5 border border-primary/20 text-[8px] font-bold text-primary hover:bg-primary/10"
+                                className="flex-shrink-0 px-2.5 py-1.5 rounded-lg bg-primary/10 border border-primary/20 text-primary text-[9px] font-bold hover:bg-primary/20 transition-all"
                               >
                                 Promote
                               </button>
                             </div>
                           ))}
                         </div>
-                      </div>
+                      )}
+                    </Card>
 
-                      <div className="space-y-3">
-                        <label className="text-[10px] font-bold text-primary uppercase tracking-widest flex items-center gap-2">
-                          <Zap className="w-3 h-3" />
-                          Active Trade Proposals (Multi-Sig)
-                        </label>
+                    {/* Active Trade Proposals (Multi-Sig) */}
+                    <Card glow className="p-5 space-y-4">
+                      <SectionLabel icon={Activity} color="text-primary">
+                        Active Trade Proposals
+                      </SectionLabel>
+                      {!pendingProposals.length ? (
+                        <EmptyState icon={Layers} message="No active proposals pending signature." />
+                      ) : (
                         <div className="space-y-3">
-                          {!collab?.activeProposals.length && (
-                            <div className="p-4 rounded-xl bg-white/5 border border-white/5 text-[10px] text-muted-foreground italic">
-                              No active trade proposals pending.
-                            </div>
-                          )}
-                          {collab?.activeProposals.map(p => (
-                            <div key={p.id} className="p-4 rounded-xl bg-primary/5 border border-primary/10 flex flex-col gap-4">
-                              <div className="flex items-center justify-between">
-                                <div className="space-y-1 overflow-hidden">
-                                  <div className="text-xs font-bold text-foreground truncate">{p.title}</div>
-                                  <div className="text-[8px] text-muted-foreground uppercase">{p.proposedBy} • {p.timestamp}</div>
+                          {pendingProposals.map((p) => {
+                            const hasSigned = p.votes.some(
+                              (v) => v.address.toLowerCase() === userAddress.toLowerCase()
+                            );
+                            const sigCount = p.votes.length;
+                            const threshold = activeTeam.multiSig.threshold;
+                            return (
+                              <div
+                                key={p.id}
+                                className="rounded-xl bg-white/[0.03] border border-white/8 overflow-hidden"
+                              >
+                                {/* Proposal header */}
+                                <div className="px-4 py-3 flex items-center justify-between gap-3 border-b border-white/5 bg-white/[0.02]">
+                                  <div className="overflow-hidden">
+                                    <p className="text-[12px] font-bold text-foreground truncate">{p.title}</p>
+                                    <p className="text-[9px] text-muted-foreground/50 uppercase mt-0.5">
+                                      {p.proposedBy} · {p.timestamp}
+                                    </p>
+                                  </div>
+                                  <div className="flex-shrink-0 text-right">
+                                    <span className="text-[10px] font-black text-primary">
+                                      {sigCount} / {threshold}
+                                    </span>
+                                    <p className="text-[8px] text-muted-foreground/40 uppercase">signed</p>
+                                  </div>
                                 </div>
-                                <div className={`text-[10px] font-black ${p.status === "approved" ? "text-green-400" : "text-primary"}`}>
-                                  {p.votes.length} / {activeTeam.multiSig.threshold} Signed
-                                </div>
-                              </div>
 
-                              {p.comments && p.comments.length > 0 && (
-                                <div className="space-y-2 py-2 border-t border-white/5">
-                                  {p.comments.map((c, ci) => (
-                                    <div key={ci} className="text-[9px] text-muted-foreground leading-relaxed">
-                                      <span className="font-bold text-primary">{c.address}</span>: {c.comment}
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-
-                              <div className="flex items-center gap-2 mt-2">
-                                <input
-                                  type="text"
-                                  placeholder="Add comment..."
-                                  value={commentInputs[p.id] || ""}
-                                  onChange={e => setCommentInputs(prev => ({ ...prev, [p.id]: e.target.value }))}
-                                  onKeyDown={e => {
-                                    if (e.key === "Enter") handleAddComment(p.id);
-                                  }}
-                                  className="flex-1 bg-black/20 border border-white/10 rounded px-2 py-1 text-[9px] focus:outline-none focus:border-primary/40"
-                                />
-                                <button
-                                  onClick={() => handleAddComment(p.id)}
-                                  className="p-1 rounded bg-primary/10 text-primary hover:bg-primary/20"
-                                >
-                                  <Plus className="w-3 h-3" />
-                                </button>
-                              </div>
-
-                              <div className="flex items-center justify-between py-2 border-t border-white/5">
-                                <div className="flex -space-x-2">
-                                  {p.votes.map(v => (
+                                {/* Signature progress bar */}
+                                <div className="px-4 py-2.5">
+                                  <div className="h-1 w-full bg-white/5 rounded-full overflow-hidden">
                                     <div
-                                      key={v.address}
-                                      className="w-6 h-6 rounded-full bg-primary/20 border-2 border-background flex items-center justify-center text-[8px] font-bold text-primary uppercase"
-                                      title={v.address}
-                                    >
-                                      {v.address.slice(0, 2)}
-                                    </div>
-                                  ))}
-                                  {Array.from({ length: Math.max(0, activeTeam.multiSig.threshold - p.votes.length) }).map((_, i) => (
-                                    <div key={i} className="w-6 h-6 rounded-full bg-white/5 border-2 border-background border-dashed" />
-                                  ))}
+                                      className="h-full bg-primary rounded-full transition-all"
+                                      style={{ width: `${Math.min(100, (sigCount / threshold) * 100)}%` }}
+                                    />
+                                  </div>
                                 </div>
 
-                                {p.status === "approved" ? (
-                                  <button
-                                    onClick={() => handleExecuteProposal(p.id)}
-                                    className="px-4 py-1.5 rounded-lg bg-green-500 text-white text-[10px] font-bold hover:bg-green-600 transition-all shadow-lg shadow-green-500/20"
-                                  >
-                                    Execute Multi-Sig
-                                  </button>
-                                ) : (
-                                  <button
-                                    onClick={() => handleSignProposal(p.id)}
-                                    disabled={p.votes.some(v => v.address.toLowerCase() === userAddress.toLowerCase())}
-                                    className={`px-4 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
-                                      p.votes.some(v => v.address.toLowerCase() === userAddress.toLowerCase())
-                                        ? "bg-green-500/20 text-green-500 border border-green-500/20"
-                                        : "bg-primary text-primary-foreground hover:bg-primary/90"
-                                    }`}
-                                  >
-                                    {p.votes.some(v => v.address.toLowerCase() === userAddress.toLowerCase()) ? "Signed" : "Sign Multi-Sig"}
-                                  </button>
+                                {/* Comments */}
+                                {p.comments && p.comments.length > 0 && (
+                                  <div className="px-4 pb-2 space-y-1.5">
+                                    {p.comments.map((c, ci) => (
+                                      <p key={ci} className="text-[10px] text-muted-foreground leading-relaxed">
+                                        <span className="font-bold text-primary">{c.address}</span>: {c.comment}
+                                      </p>
+                                    ))}
+                                  </div>
                                 )}
+
+                                {/* Comment input + actions */}
+                                <div className="px-4 py-3 border-t border-white/5 space-y-3">
+                                  <div className="flex gap-2">
+                                    <input
+                                      type="text"
+                                      placeholder="Add a comment…"
+                                      value={commentInputs[p.id] || ""}
+                                      onChange={(e) =>
+                                        setCommentInputs((prev) => ({ ...prev, [p.id]: e.target.value }))
+                                      }
+                                      onKeyDown={(e) => {
+                                        if (e.key === "Enter") handleAddComment(p.id);
+                                      }}
+                                      className="flex-1 bg-black/20 border border-white/8 rounded-lg px-3 py-1.5 text-[10px] placeholder:text-white/20 focus:outline-none focus:border-primary/30 transition-all"
+                                    />
+                                    <button
+                                      onClick={() => handleAddComment(p.id)}
+                                      className="px-2 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-all border border-primary/20"
+                                    >
+                                      <Plus className="w-3 h-3" />
+                                    </button>
+                                  </div>
+
+                                  <div className="flex items-center justify-between">
+                                    {/* Signer avatars */}
+                                    <div className="flex -space-x-2">
+                                      {p.votes.map((v) => (
+                                        <div
+                                          key={v.address}
+                                          title={v.address}
+                                          className="w-6 h-6 rounded-full bg-primary/20 border-2 border-background flex items-center justify-center text-[7px] font-bold text-primary uppercase"
+                                        >
+                                          {v.address.slice(0, 2)}
+                                        </div>
+                                      ))}
+                                      {Array.from({
+                                        length: Math.max(0, threshold - sigCount),
+                                      }).map((_, i) => (
+                                        <div
+                                          key={i}
+                                          className="w-6 h-6 rounded-full bg-white/5 border-2 border-background border-dashed"
+                                        />
+                                      ))}
+                                    </div>
+
+                                    {p.status === "approved" ? (
+                                      <button
+                                        onClick={() => handleExecuteProposal(p.id)}
+                                        className="px-4 py-1.5 rounded-lg bg-green-500 text-white text-[10px] font-bold hover:bg-green-600 transition-all shadow-md shadow-green-500/20"
+                                      >
+                                        Execute Multi-Sig
+                                      </button>
+                                    ) : (
+                                      <button
+                                        onClick={() => handleSignProposal(p.id)}
+                                        disabled={hasSigned}
+                                        className={`px-4 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
+                                          hasSigned
+                                            ? "bg-green-500/15 text-green-400 border border-green-500/20 cursor-default"
+                                            : "bg-primary text-primary-foreground hover:brightness-110 active:scale-95 shadow-md shadow-primary/20"
+                                        }`}
+                                      >
+                                        {hasSigned ? "✓ Signed" : "Sign Multi-Sig"}
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
                               </div>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
-                      </div>
-                    </div>
+                      )}
+                    </Card>
 
-                    <div className="px-6 py-3 border-t border-white/5 bg-black/20 flex items-center justify-between">
-                      <span className="text-[9px] text-muted-foreground">Consensus powered by Fileverse dDocs</span>
-                      <div className="flex items-center gap-1.5">
-                        <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-                        <span className="text-[9px] text-green-500 font-bold uppercase">Sync Active</span>
-                      </div>
-                    </div>
+                    {/* Decision History */}
+                    {resolvedProposals.length > 0 && (
+                      <Card className="p-5 space-y-4">
+                        <SectionLabel icon={History} color="text-muted-foreground">
+                          Decision History
+                        </SectionLabel>
+                        <div className="overflow-x-auto rounded-xl border border-white/5">
+                          <table className="w-full text-left text-xs">
+                            <thead>
+                              <tr className="border-b border-white/8 bg-white/[0.03]">
+                                {["Date", "Proposal", "Status", "Author", "Votes"].map((h) => (
+                                  <th key={h} className="px-4 py-2.5 text-[9px] text-muted-foreground/50 font-bold uppercase tracking-wider">
+                                    {h}
+                                  </th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {resolvedProposals.map((p) => (
+                                <tr key={p.id} className="border-b border-white/5 hover:bg-white/[0.02] transition-all">
+                                  <td className="px-4 py-3 text-[10px] text-muted-foreground whitespace-nowrap">
+                                    {p.timestamp.split(",")[0]}
+                                  </td>
+                                  <td className="px-4 py-3 text-[11px] font-medium text-foreground max-w-[200px] truncate">
+                                    {p.title}
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    <Badge variant={p.status === "approved" ? "green" : "red"}>
+                                      {p.status}
+                                    </Badge>
+                                  </td>
+                                  <td className="px-4 py-3 text-[10px] font-mono text-muted-foreground">
+                                    {p.proposedBy.slice(0, 6)}…
+                                  </td>
+                                  <td className="px-4 py-3 text-[10px] text-muted-foreground">
+                                    {p.votes.length}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </Card>
+                    )}
                   </div>
-                </div>
 
-                <div className="lg:col-span-3">
-                  <div className="grid grid-cols-2 gap-4">
+                  {/* ── Right sidebar column ── */}
+                  <div className="space-y-5">
+
+                    {/* Propose Rule & Suggest Trade panels */}
                     <ProposeRulePanel
                       activeTeam={activeTeam}
                       userAddress={userAddress}
@@ -838,187 +1163,240 @@ const Boardroom = () => {
                       onPromoteDraft={handlePromoteDraft}
                       onDiscardDraft={() => setDraftProposal(null)}
                     />
-                  </div>
-                </div>
 
-                <div className="lg:col-span-3 space-y-6">
-                  <div className="glass rounded-xl p-6 border border-primary/20 bg-primary/5">
-                    <div className="flex items-center gap-2 mb-6">
-                      <Shield className="w-4 h-4 text-primary" />
-                      <h3 className="text-xs font-bold text-foreground uppercase tracking-wider">Multi-Sig Policy</h3>
-                    </div>
-                    <div className="space-y-6">
+                    {/* Multi-sig policy */}
+                    <Card glow className="p-5 space-y-5">
+                      <SectionLabel icon={Shield} color="text-primary">
+                        Multi-Sig Policy
+                      </SectionLabel>
+
+                      {/* Threshold */}
                       <div className="space-y-2">
-                        <div className="flex justify-between items-end">
-                          <label className="text-[10px] font-bold text-primary uppercase">Threshold</label>
-                          <span className="text-xs font-mono font-bold text-primary">
+                        <div className="flex justify-between items-center">
+                          <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                            Threshold
+                          </span>
+                          <span className="text-[11px] font-mono font-black text-primary">
                             {activeTeam.multiSig.threshold} of {activeTeam.multiSig.signers.length}
                           </span>
                         </div>
-                        <input
-                          type="range"
-                          min="1"
-                          max={activeTeam.multiSig.signers.length}
-                          value={activeTeam.multiSig.threshold}
-                          readOnly
-                          className="w-full h-1 bg-white/10 rounded-lg appearance-none accent-primary cursor-default opacity-50"
-                        />
+                        <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-primary/60 rounded-full"
+                            style={{
+                              width: `${(activeTeam.multiSig.threshold / activeTeam.multiSig.signers.length) * 100}%`,
+                            }}
+                          />
+                        </div>
                       </div>
 
-                      <div className="space-y-3">
-                        <label className="text-[10px] font-bold text-primary uppercase">Signer List</label>
-                        <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1 custom-scrollbar">
-                          {activeTeam.multiSig?.signers?.map(signer => (
-                            <div key={signer} className="flex items-center justify-between p-2 rounded-lg bg-white/5 border border-white/5">
-                              <div className="flex items-center gap-2">
-                                <div className={`w-1.5 h-1.5 rounded-full ${userAddress === signer.toLowerCase() ? "bg-primary animate-pulse" : "bg-white/20"}`} />
-                                <span className="text-[10px] font-mono text-foreground">
-                                  {signer.slice(0, 10)}...{signer.slice(-8)}
-                                </span>
-                                {signer.toLowerCase() === activeTeam.creatorAddress?.toLowerCase() && (
-                                  <span className="text-[8px] px-1 bg-primary/20 text-primary rounded border border-primary/20">OWNER</span>
-                                )}
+                      {/* Signer list */}
+                      <div className="space-y-2">
+                        <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">
+                          Signers
+                        </span>
+                        <div className="space-y-1.5 max-h-[180px] overflow-y-auto pr-0.5">
+                          {activeTeam.multiSig?.signers?.map((signer) => {
+                            const isMe = userAddress === signer.toLowerCase();
+                            const isCreator = signer.toLowerCase() === activeTeam.creatorAddress?.toLowerCase();
+                            return (
+                              <div
+                                key={signer}
+                                className="flex items-center justify-between p-2.5 rounded-lg bg-white/[0.03] border border-white/5"
+                              >
+                                <div className="flex items-center gap-2 overflow-hidden">
+                                  <div
+                                    className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                                      isMe ? "bg-primary animate-pulse" : "bg-white/15"
+                                    }`}
+                                  />
+                                  <span className="text-[10px] font-mono text-foreground/70 truncate">
+                                    {signer.slice(0, 10)}…{signer.slice(-6)}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-1.5 flex-shrink-0">
+                                  {isCreator && <Badge variant="primary">Owner</Badge>}
+                                  {isMe && <span className="text-[9px] font-black text-primary">YOU</span>}
+                                </div>
                               </div>
-                              {userAddress === signer.toLowerCase() && (
-                                <span className="text-[9px] text-primary font-bold">YOU</span>
-                              )}
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       </div>
 
-                      <div className="pt-4 border-t border-white/5">
-                        <div className="flex items-center gap-2 text-[10px] text-muted-foreground italic leading-relaxed">
-                          <Shield className="w-3 h-3 flex-shrink-0" />
-                          Policy is cryptographically tied to the boardroom dDoc audit trail.
-                        </div>
+                      <div className="pt-2 border-t border-white/5 flex items-start gap-2">
+                        <Lock className="w-3 h-3 text-muted-foreground/40 flex-shrink-0 mt-0.5" />
+                        <p className="text-[9px] text-muted-foreground/40 italic leading-relaxed">
+                          Policy is tied to the boardroom dDoc audit trail.
+                        </p>
                       </div>
-                    </div>
-                  </div>
+                    </Card>
 
-                  <div className="glass rounded-xl p-6 border border-white/10">
-                    <h3 className="text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-4">Boardroom Info</h3>
-                    <div className="space-y-4">
-                      <div>
-                        <div className="text-[9px] text-muted-foreground mb-1 uppercase">Doc Created</div>
-                        <div className="text-xs font-mono">
-                          {activeTeam.createdAt
-                            ? new Date(activeTeam.createdAt).toLocaleDateString()
-                            : "Established"}
+                    {/* Boardroom info */}
+                    <Card className="p-5 space-y-4">
+                      <SectionLabel icon={Database} color="text-muted-foreground">
+                        Room Info
+                      </SectionLabel>
+                      <div className="space-y-3">
+                        <div>
+                          <p className="text-[9px] text-muted-foreground/40 uppercase tracking-wider mb-1">
+                            Created
+                          </p>
+                          <p className="text-[11px] font-mono text-foreground/70">
+                            {activeTeam.createdAt
+                              ? new Date(activeTeam.createdAt).toLocaleDateString()
+                              : "Established"}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-[9px] text-muted-foreground/40 uppercase tracking-wider mb-1">
+                            Protocol
+                          </p>
+                          <p className="text-[11px] font-mono text-foreground/70">AetherGuard v2</p>
                         </div>
                       </div>
-                      <div>
-                        <div className="text-[9px] text-muted-foreground mb-1 uppercase">Protocol</div>
-                        <div className="text-xs font-mono">AetherGuard v2 Collab</div>
-                      </div>
-                    </div>
+                    </Card>
                   </div>
                 </div>
               </div>
             ) : (
+              /* ── No Active Team ── */
               <motion.div
-                initial={{ opacity: 0, scale: 0.95 }}
+                initial={{ opacity: 0, scale: 0.97 }}
                 animate={{ opacity: 1, scale: 1 }}
-                className="flex flex-col items-center justify-center min-h-[400px] text-center glass rounded-2xl border border-white/5"
+                className="flex flex-col items-center justify-center min-h-[420px] text-center"
               >
-                <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mb-6">
-                  <Users className="w-8 h-8 text-primary/40" />
-                </div>
-                <h2 className="text-xl font-bold text-foreground">Select or Create a Boardroom</h2>
-                <p className="text-sm text-muted-foreground mt-2 max-w-md mx-auto">
-                  {teams.length > 0
-                    ? "Choose a team strategy from the registry on the left to enter the boardroom workspace."
-                    : "You haven't established any team strategies yet. Boardrooms allow you to coordinate with partners."}
-                </p>
-                <button
-                  onClick={() => setNewTeamOpen(true)}
-                  className="mt-8 flex items-center gap-2 px-6 py-3 rounded-xl bg-primary text-primary-foreground font-bold hover:bg-primary/90 transition-all shadow-lg shadow-primary/20"
-                >
-                  <PlusCircle className="w-4 h-4" />
-                  Establish Team Room
-                </button>
+                <Card className="w-full max-w-md mx-auto p-12">
+                  <div className="w-16 h-16 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center mx-auto mb-6">
+                    <Users className="w-8 h-8 text-primary/40" />
+                  </div>
+                  <h2 className="text-lg font-black text-foreground">Select a Boardroom</h2>
+                  <p className="text-sm text-muted-foreground mt-2 leading-relaxed">
+                    {teams.length > 0
+                      ? "Choose a team strategy from the registry on the left."
+                      : "No team strategies found. Create one to coordinate with partners."}
+                  </p>
+                  <button
+                    onClick={() => setNewTeamOpen(true)}
+                    className="mt-8 flex items-center gap-2 px-6 py-3 rounded-xl bg-primary text-primary-foreground font-bold text-sm hover:brightness-110 active:scale-95 transition-all shadow-lg shadow-primary/20 mx-auto"
+                  >
+                    <PlusCircle className="w-4 h-4" />
+                    Establish Team Room
+                  </button>
+                </Card>
               </motion.div>
             )}
-          </div>
+          </motion.div>
         </div>
       </div>
 
+      {/* ── Create Team Modal ── */}
       <AnimatePresence>
         {newTeamOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-lg">
             <motion.div
-              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              initial={{ opacity: 0, scale: 0.92, y: 16 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.9 }}
-              className="glass rounded-2xl p-8 w-full max-w-xl border border-primary/30 shadow-2xl"
+              exit={{ opacity: 0, scale: 0.92, y: 8 }}
+              transition={{ type: "spring", stiffness: 400, damping: 28 }}
+              className="w-full max-w-lg"
             >
-              <div className="flex items-center justify-between mb-8">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-primary/20 flex items-center justify-center text-primary">
-                    <Shield className="w-5 h-5" />
+              <Card glow className="p-7">
+                {/* Modal header */}
+                <div className="flex items-start justify-between mb-7">
+                  <div className="flex items-center gap-3.5">
+                    <div className="w-11 h-11 rounded-xl bg-primary/15 border border-primary/25 flex items-center justify-center">
+                      <Users className="w-5 h-5 text-primary" />
+                    </div>
+                    <div>
+                      <h2 className="text-lg font-black text-foreground">New Team Strategy</h2>
+                      <p className="text-[10px] text-muted-foreground/60 mt-0.5">
+                        Creates a dedicated Fileverse boardroom doc.
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <h2 className="text-xl font-bold text-foreground">Establish Team Strategy</h2>
-                    <p className="text-xs text-muted-foreground">Creates a dedicated collaborative Fileverse boardroom doc.</p>
-                  </div>
-                </div>
-                <button onClick={() => setNewTeamOpen(false)} className="text-muted-foreground hover:text-foreground">
-                  <Plus className="w-5 h-5 rotate-45" />
-                </button>
-              </div>
-
-              <div className="space-y-6">
-                <div>
-                  <label className="text-[10px] font-black text-primary uppercase tracking-widest mb-2 block">
-                    Team Strategy Name
-                  </label>
-                  <input
-                    value={teamName}
-                    onChange={e => setTeamName(e.target.value)}
-                    placeholder="e.g. Alpha DAO Treasury, Family Fund..."
-                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary/50"
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-black text-primary uppercase tracking-widest mb-2 block">
-                    Foundational Goal
-                  </label>
-                  <textarea
-                    value={teamGoal}
-                    onChange={e => setTeamGoal(e.target.value)}
-                    placeholder="Describe the shared direction of this team fund..."
-                    rows={3}
-                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm resize-none focus:outline-none focus:border-primary/50"
-                  />
+                  <button
+                    onClick={() => setNewTeamOpen(false)}
+                    className="p-2 rounded-lg hover:bg-white/8 text-muted-foreground hover:text-foreground transition-all"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
                 </div>
 
-                <div className="space-y-3">
-                  <label className="text-[10px] font-black text-primary uppercase tracking-widest mb-2 block">
-                    Signer Governance (Signers: {signers.length + 1})
-                  </label>
+                {/* Form fields */}
+                <div className="space-y-5">
                   <div className="space-y-2">
+                    <label className="text-[10px] font-black text-primary uppercase tracking-widest block">
+                      Team Name
+                    </label>
+                    <input
+                      value={teamName}
+                      onChange={(e) => setTeamName(e.target.value)}
+                      placeholder="e.g. Alpha DAO Treasury, Family Fund…"
+                      className="w-full bg-white/[0.04] border border-white/8 rounded-xl px-4 py-3 text-sm placeholder:text-white/20 focus:outline-none focus:border-primary/40 focus:ring-1 focus:ring-primary/10 transition-all"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-primary uppercase tracking-widest block">
+                      Foundational Goal
+                    </label>
+                    <textarea
+                      value={teamGoal}
+                      onChange={(e) => setTeamGoal(e.target.value)}
+                      placeholder="Describe the shared direction of this team fund…"
+                      rows={3}
+                      className="w-full bg-white/[0.04] border border-white/8 rounded-xl px-4 py-3 text-sm placeholder:text-white/20 resize-none focus:outline-none focus:border-primary/40 focus:ring-1 focus:ring-primary/10 transition-all leading-relaxed"
+                    />
+                  </div>
+
+                  <div className="space-y-2.5">
+                    <label className="text-[10px] font-black text-primary uppercase tracking-widest block">
+                      Signer Governance
+                      <span className="ml-2 font-normal text-muted-foreground normal-case tracking-normal">
+                        ({signers.length + 1} signer{signers.length !== 0 ? "s" : ""})
+                      </span>
+                    </label>
+
+                    {/* Current signers */}
                     <div className="flex flex-wrap gap-2">
-                      <span className="px-3 py-1 rounded-lg bg-primary/20 text-primary text-[10px] font-mono border border-primary/30">
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/15 border border-primary/25 text-primary text-[10px] font-mono">
+                        <div className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
                         You (Owner)
                       </span>
-                      {signers.map(s => (
-                        <div key={s} className="flex items-center gap-2 px-3 py-1 rounded-lg bg-white/5 border border-white/10 group">
-                          <span className="text-[10px] font-mono text-muted-foreground">{s.slice(0, 10)}...</span>
+                      {signers.map((s) => (
+                        <div
+                          key={s}
+                          className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/[0.04] border border-white/8"
+                        >
+                          <span className="text-[10px] font-mono text-muted-foreground">
+                            {s.slice(0, 8)}…{s.slice(-4)}
+                          </span>
                           <button
-                            onClick={() => setSigners(signers.filter(x => x !== s))}
-                            className="text-muted-foreground hover:text-destructive transition-all"
+                            onClick={() => setSigners(signers.filter((x) => x !== s))}
+                            className="text-muted-foreground/50 hover:text-red-400 transition-all"
                           >
                             <Trash2 className="w-3 h-3" />
                           </button>
                         </div>
                       ))}
                     </div>
+
+                    {/* Add signer */}
                     <div className="flex gap-2">
                       <input
                         value={signerInput}
-                        onChange={e => setSignerInput(e.target.value)}
-                        placeholder="Add partner wallet 0x..."
-                        className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-xs focus:outline-none focus:border-primary/50"
+                        onChange={(e) => setSignerInput(e.target.value)}
+                        placeholder="Add partner wallet 0x…"
+                        className="flex-1 bg-white/[0.04] border border-white/8 rounded-xl px-4 py-2.5 text-[11px] font-mono placeholder:text-white/20 focus:outline-none focus:border-primary/40 transition-all"
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            if (signerInput.startsWith("0x") && signerInput.length === 42) {
+                              setSigners([...signers, signerInput.toLowerCase()]);
+                              setSignerInput("");
+                            }
+                          }
+                        }}
                       />
                       <button
                         onClick={() => {
@@ -1027,186 +1405,44 @@ const Boardroom = () => {
                             setSignerInput("");
                           }
                         }}
-                        className="px-4 bg-primary/10 text-primary rounded-xl border border-primary/30 hover:bg-primary/20 font-bold text-xs"
+                        className="px-4 bg-primary/10 text-primary rounded-xl border border-primary/25 hover:bg-primary/20 font-bold text-xs transition-all flex items-center gap-1.5"
                       >
+                        <UserPlus className="w-3.5 h-3.5" />
                         Add
                       </button>
                     </div>
                   </div>
                 </div>
-              </div>
 
-              <div className="flex gap-4 mt-10">
-                <button
-                  onClick={() => setNewTeamOpen(false)}
-                  className="flex-1 py-3 rounded-xl bg-white/5 text-muted-foreground text-sm font-bold border border-white/10 hover:bg-white/10 transition-all"
-                >
-                  Cancel
-                </button>
-                <button
-                  disabled={!teamName || !teamGoal || isCreating}
-                  onClick={handleCreateTeam}
-                  className="flex-1 py-3 rounded-xl bg-primary text-primary-foreground text-sm font-bold hover:bg-primary/90 transition-all shadow-lg shadow-primary/20 disabled:opacity-50"
-                >
-                  {isCreating ? "Establishing..." : "Launch Boardroom"}
-                </button>
-              </div>
+                {/* Actions */}
+                <div className="flex gap-3 mt-8">
+                  <button
+                    onClick={() => setNewTeamOpen(false)}
+                    className="flex-1 py-3 rounded-xl bg-white/[0.04] text-muted-foreground text-sm font-bold border border-white/8 hover:bg-white/[0.08] transition-all"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    disabled={!teamName || !teamGoal || isCreating}
+                    onClick={handleCreateTeam}
+                    className="flex-1 py-3 rounded-xl bg-primary text-primary-foreground text-sm font-black hover:brightness-110 active:scale-[0.98] transition-all shadow-lg shadow-primary/20 disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {isCreating ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Establishing…
+                      </>
+                    ) : (
+                      <>
+                        <Shield className="w-4 h-4" />
+                        Launch Boardroom
+                      </>
+                    )}
+                  </button>
+                </div>
+              </Card>
             </motion.div>
           </div>
-        )}
-      </AnimatePresence>
-      <ParticleBackground />
-    </div>
-  );
-};
-
-type ProposeRulePanelProps = {
-  activeTeam: TeamStrategy;
-  userAddress: string;
-  onPropose: (val: string) => void;
-};
-
-const ProposeRulePanel = ({ activeTeam, userAddress, onPropose }: ProposeRulePanelProps) => {
-  const [value, setValue] = useState("");
-
-  const submit = () => {
-    if (!value.trim()) return;
-    onPropose(value.trim());
-    setValue("");
-  };
-
-  return (
-    <div className="p-4 rounded-xl bg-white/5 border border-white/10 space-y-3">
-      <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest flex items-center gap-1.5">
-        <Plus className="w-3 h-3" /> Propose Rule
-      </span>
-      <div className="flex gap-2">
-        <input
-          type="text"
-          value={value}
-          onChange={e => setValue(e.target.value)}
-          placeholder="e.g. Max 5% SL..."
-          className="flex-1 bg-black/40 border border-white/5 rounded-lg px-3 py-2 text-[10px] font-mono focus:outline-none focus:border-primary/50"
-          onKeyDown={e => {
-            if (e.key === "Enter") submit();
-          }}
-        />
-        <button
-          onClick={submit}
-          className="px-3 py-2 rounded-lg bg-primary/10 border border-primary/20 text-primary text-[10px] font-bold hover:bg-primary/20 transition-all font-display"
-        >
-          PROPOSE
-        </button>
-      </div>
-      <ParticleBackground />
-    </div>
-  );
-};
-
-type SuggestTradePanelProps = {
-  activeTeam: TeamStrategy;
-  userAddress: string;
-  onSuggest: (val: string) => void;
-  onSummonAI: () => void;
-  isSummoning: boolean;
-  draftProposal: TradeProposal | null;
-  onPromoteDraft: () => void;
-  onDiscardDraft: () => void;
-};
-
-const SuggestTradePanel = ({ 
-  activeTeam, 
-  userAddress, 
-  onSuggest, 
-  onSummonAI, 
-  isSummoning, 
-  draftProposal, 
-  onPromoteDraft,
-  onDiscardDraft
-}: SuggestTradePanelProps) => {
-  const [value, setValue] = useState("");
-
-  const submit = () => {
-    if (!value.trim()) return;
-    onSuggest(value.trim());
-    setValue("");
-  };
-
-  return (
-    <div className="p-4 rounded-xl bg-white/5 border border-white/10 space-y-4 relative overflow-hidden">
-      <div className="flex items-center justify-between">
-        <span className="text-[9px] font-black text-muted-foreground uppercase tracking-widest flex items-center gap-1.5">
-          <Zap className="w-3 h-3 text-primary" /> Suggest Trade
-        </span>
-        <button
-          onClick={onSummonAI}
-          disabled={isSummoning}
-          className="flex items-center gap-1.5 px-2 py-1 rounded bg-primary/10 text-primary border border-primary/20 text-[8px] font-bold hover:bg-primary/20 transition-all disabled:opacity-50"
-        >
-          {isSummoning ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <Bot className="w-2.5 h-2.5" />}
-          {isSummoning ? "CONSULTING AI..." : "ASK AI ASSISTANT"}
-        </button>
-      </div>
-
-      <div className="flex gap-2">
-        <textarea
-          rows={1}
-          value={value}
-          onChange={e => setValue(e.target.value)}
-          placeholder="e.g. Rotate part of ETH to WBTC..."
-          className="flex-1 bg-black/40 border border-white/5 rounded-lg px-3 py-2 text-[10px] font-mono focus:outline-none focus:border-primary/50 resize-none"
-          onKeyDown={e => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              submit();
-            }
-          }}
-        />
-        <button
-          onClick={submit}
-          className="px-3 py-2 rounded-lg bg-primary/10 border border-primary/20 text-primary text-[10px] font-bold hover:bg-primary/20 transition-all font-display"
-        >
-          SUGGEST
-        </button>
-      </div>
-
-      <AnimatePresence>
-        {draftProposal && (
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95 }}
-            className="p-3 rounded-lg bg-primary/10 border border-primary/30 space-y-3 relative z-10"
-          >
-             <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5">
-                   <Bot className="w-3 h-3 text-primary" />
-                   <span className="text-[9px] font-bold text-primary uppercase">Draft Proposal</span>
-                </div>
-                <button onClick={onDiscardDraft} className="text-muted-foreground hover:text-foreground">
-                   <X className="w-2.5 h-2.5" />
-                </button>
-             </div>
-             
-             <div className="space-y-1">
-                <div className="text-[10px] font-bold text-foreground">
-                   {draftProposal.action.toUpperCase()} {draftProposal.token} @ {draftProposal.allocationPercent}%
-                </div>
-                <p className="text-[9px] text-muted-foreground leading-relaxed italic">
-                   "{draftProposal.reasoning.slice(0, 100)}..."
-                </p>
-             </div>
-
-             <div className="flex gap-2 pt-1">
-                <button 
-                  onClick={onPromoteDraft}
-                  className="flex-1 py-1.5 rounded bg-primary text-primary-foreground text-[9px] font-bold hover:bg-primary/90 transition-all flex items-center justify-center gap-1.5"
-                >
-                   <ArrowBigUp className="w-3 h-3" />
-                   PROMOTE TO BOARDROOM
-                </button>
-             </div>
-          </motion.div>
         )}
       </AnimatePresence>
     </div>

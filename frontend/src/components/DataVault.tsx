@@ -136,9 +136,9 @@ const DataVault = ({ refreshTrigger, strategies = [] }: DataVaultProps) => {
                             : "—"}
                         </td>
                         <td className="px-4 py-3 text-right">
-                          {s.docLink ? (
+                          {(s.docLink || strategyLinks.find(sl => sl.number === s.number)?.link) ? (
                             <a
-                              href={s.docLink}
+                              href={s.docLink || strategyLinks.find(sl => sl.number === s.number)?.link}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-foreground/80 font-bold transition-colors border border-white/10"
