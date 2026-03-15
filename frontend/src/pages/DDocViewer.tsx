@@ -72,7 +72,7 @@ const DDocViewer = () => {
           <div className="flex justify-between items-start mb-16">
             <div className="space-y-1">
               <div className="text-[10px] font-mono text-gray-400 uppercase tracking-widest">Status: Finalized</div>
-              <div className="text-[10px] font-mono text-gray-400 uppercase tracking-widest">Network: Privacy-Preserved L2</div>
+              <div className="text-[10px] font-mono text-gray-400 uppercase tracking-widest">Network: Base Sepolia</div>
             </div>
             <div className="text-right">
               <Shield className="w-8 h-8 text-primary/10 ml-auto mb-2" />

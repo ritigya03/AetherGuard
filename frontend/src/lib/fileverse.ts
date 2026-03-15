@@ -7,8 +7,8 @@ export interface FileverseDoc {
   isRealLink?: boolean;
 }
 
-const BASE = import.meta.env.VITE_FILEVERSE_API || "";
-const KEY = import.meta.env.VITE_FILEVERSE_KEY || "";
+const BASE = import.meta.env.VITE_FILEVERSE_API;
+const KEY = import.meta.env.VITE_FILEVERSE_KEY;
 
 // Storage keys
 const MASTER_DOC_KEY = "aetherguard_master_doc_id";
@@ -606,7 +606,7 @@ export async function appendDecisionToDoc(
     const rejectedCount = (content.match(/\| ❌ REJECTED \|/g) || []).length;
 
     const positionMatches = content.match(/\$[\d,]+(?:\.\d+)? \(~/g) || [];
-    const totalCapital = (positionMatches as string[]).reduce((sum: number, match: string) => {
+    const totalCapital = positionMatches.reduce((sum, match) => {
       const val = parseFloat(match.replace(/[$,]/g, "").replace(" (~", ""));
       return sum + (isNaN(val) ? 0 : val);
     }, 0);
@@ -628,7 +628,7 @@ export async function appendDecisionToDoc(
       `| **Approved** | ${approvedCount} ✅ |`,
       `| **Rejected** | ${rejectedCount} ❌ |`,
       `| **Approval Rate** | ${totalTrades > 0 ? Math.round((approvedCount / totalTrades) * 100) : 0}% |`,
-      `| **Total Capital Deployed** | ${formatUsd(totalCapital as number)} |`,
+      `| **Total Capital Deployed** | ${formatUsd(totalCapital)} |`,
       `| **Most Traded Token** | ${mostTraded} |`,
       ``,
       `---`,

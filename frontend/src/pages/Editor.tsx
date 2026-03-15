@@ -26,7 +26,7 @@ import {
   type Strategy,
   type MultiSigConfig,
 } from "@/lib/fileverseStore";
-import { PlusCircle, List, BookOpen, X, Sparkles, ArrowRight, ShieldCheck, Activity } from "lucide-react";
+import { PlusCircle, List, BookOpen, X, Sparkles } from "lucide-react";
 import type { TradeProposal } from "@/lib/claude";
 import type { ProofResult } from "@/lib/proof";
 
@@ -57,111 +57,91 @@ const NewStrategyModal = ({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
       <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        onClick={onCancel}
-        className="absolute inset-0 bg-black/80 backdrop-blur-md"
-      />
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95, y: 20 }}
+        initial={{ opacity: 0, scale: 0.9, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.95, y: 20 }}
-        className="relative glass rounded-3xl p-6 sm:p-10 w-full max-w-2xl border border-primary/20 shadow-[-20px_-20px_60px_rgba(0,0,0,0.5),20px_20px_60px_rgba(var(--primary-rgb),0.05)] overflow-hidden"
+        exit={{ opacity: 0, scale: 0.9 }}
+        className="glass rounded-2xl p-8 w-full max-w-lg border border-primary/30 shadow-2xl shadow-primary/10"
       >
-        {/* Glow Effects */}
-        <div className="absolute -top-24 -left-24 w-48 h-48 bg-primary/10 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute -bottom-24 -right-24 w-48 h-48 bg-primary/10 rounded-full blur-3xl pointer-events-none" />
-
-        <div className="relative z-10">
-          <div className="flex items-center justify-between mb-8">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-primary/30 to-primary/10 flex items-center justify-center border border-primary/20 shadow-lg shadow-primary/10">
-                <Sparkles className="w-6 h-6 text-primary" />
-              </div>
-              <div>
-                <h2 className="font-display text-2xl font-black text-foreground tracking-tight">Establish Strategy</h2>
-                <p className="text-xs text-muted-foreground font-medium uppercase tracking-widest mt-0.5 opacity-70">New Private dDoc Manifest</p>
-              </div>
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-primary/20 flex items-center justify-center">
+              <Sparkles className="w-4 h-4 text-primary" />
             </div>
-            <button 
-              onClick={onCancel} 
-              className="p-2 rounded-xl hover:bg-white/5 text-muted-foreground transition-all"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-
-          <div className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-primary uppercase tracking-[0.2em] ml-1">Manifest Name</label>
-                <input
-                  value={name}
-                  onChange={e => setName(e.target.value)}
-                  placeholder="e.g. ALPHA_HARVEST_01"
-                  className="w-full px-4 py-3.5 rounded-2xl bg-white/5 border border-white/10 text-sm text-foreground placeholder:text-muted-foreground/30 focus:outline-none focus:border-primary/40 focus:ring-1 focus:ring-primary/20 transition-all font-mono"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-primary uppercase tracking-[0.2em] ml-1">Risk Profile</label>
-                  <select
-                    value={risk}
-                    onChange={e => setRisk(e.target.value)}
-                    className="w-full px-4 py-3.5 rounded-2xl bg-black/40 border border-white/10 text-sm text-foreground focus:outline-none focus:border-primary/40 transition-all appearance-none cursor-pointer"
-                  >
-                    <option value="low">Low</option>
-                    <option value="medium">Medium</option>
-                    <option value="high">High</option>
-                  </select>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-primary uppercase tracking-[0.2em] ml-1">Time Horizon</label>
-                  <select
-                    value={horizon}
-                    onChange={e => setHorizon(e.target.value)}
-                    className="w-full px-4 py-3.5 rounded-2xl bg-black/40 border border-white/10 text-sm text-foreground focus:outline-none focus:border-primary/40 transition-all appearance-none cursor-pointer"
-                  >
-                    <option value="1 month">1 Month</option>
-                    <option value="6 months">6 Months</option>
-                    <option value="1 year">1 Year</option>
-                    <option value="2+ years">2+ Years</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-[10px] font-black text-primary uppercase tracking-[0.2em] ml-1">Primary Objective</label>
-              <textarea
-                value={goal}
-                onChange={e => setGoal(e.target.value)}
-                rows={3}
-                placeholder="Describe your investment goals for the AI..."
-                className="w-full px-4 py-3.5 rounded-2xl bg-white/5 border border-white/10 text-sm text-foreground placeholder:text-muted-foreground/30 focus:outline-none focus:border-primary/40 focus:ring-1 focus:ring-primary/20 transition-all resize-none leading-relaxed"
-              />
+            <div>
+              <h2 className="font-display text-lg font-bold text-foreground">New Strategy</h2>
+              <p className="text-xs text-muted-foreground">This will create a dedicated Fileverse report doc.</p>
             </div>
           </div>
+          <button onClick={onCancel} className="text-muted-foreground hover:text-foreground">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
 
-          <div className="flex flex-col sm:flex-row gap-4 mt-10">
-            <button
-              onClick={onCancel}
-              className="flex-1 py-4 rounded-2xl bg-white/5 text-muted-foreground text-xs font-black uppercase tracking-widest border border-white/10 hover:bg-white/10 hover:text-foreground transition-all"
-            >
-              Discard
-            </button>
-            <button
-              disabled={!name.trim() || !goal.trim()}
-              onClick={() => onConfirm(name.trim(), goal.trim(), risk, horizon)}
-              className="flex-[2] py-4 rounded-2xl bg-primary text-primary-foreground text-xs font-black uppercase tracking-[0.2em] hover:brightness-110 active:scale-[0.98] transition-all disabled:opacity-30 disabled:cursor-not-allowed shadow-xl shadow-primary/20 group flex items-center justify-center gap-2"
-            >
-              Initialize Strategy
-              <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-            </button>
+        <div className="space-y-4">
+          <div>
+            <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Strategy Name</label>
+            <input
+              value={name}
+              onChange={e => setName(e.target.value)}
+              placeholder="e.g. ETH Accumulation, BTC Hedge, DeFi Rotation..."
+              className="w-full mt-1.5 px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/50"
+            />
           </div>
+          <div>
+            <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Investment Goal</label>
+            <textarea
+              value={goal}
+              onChange={e => setGoal(e.target.value)}
+              rows={2}
+              className="w-full mt-1.5 px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/50 resize-none"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Risk Tolerance</label>
+              <select
+                value={risk}
+                onChange={e => setRisk(e.target.value)}
+                className="w-full mt-1.5 px-3 py-2 rounded-lg bg-black/40 border border-white/10 text-sm text-foreground focus:outline-none focus:border-primary/50"
+              >
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Time Horizon</label>
+              <select
+                value={horizon}
+                onChange={e => setHorizon(e.target.value)}
+                className="w-full mt-1.5 px-3 py-2 rounded-lg bg-black/40 border border-white/10 text-sm text-foreground focus:outline-none focus:border-primary/50"
+              >
+                <option value="1 month">1 Month</option>
+                <option value="3 months">3 Months</option>
+                <option value="6 months">6 Months</option>
+                <option value="1 year">1 Year</option>
+                <option value="2+ years">2+ Years</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex gap-3 mt-6">
+          <button
+            onClick={onCancel}
+            className="flex-1 py-2.5 rounded-xl bg-white/5 text-muted-foreground text-xs font-bold border border-white/10 hover:bg-white/10 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            disabled={!name.trim() || !goal.trim()}
+            onClick={() => onConfirm(name.trim(), goal.trim(), risk, horizon)}
+            className="flex-1 py-2.5 rounded-xl bg-primary text-primary-foreground text-xs font-bold hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Create Strategy & Report Doc
+          </button>
         </div>
       </motion.div>
     </div>
@@ -365,32 +345,20 @@ const Editor = () => {
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="flex flex-col md:flex-row items-center justify-between mb-12 gap-6"
+          className="flex items-center justify-between mb-8"
         >
-          <div className="flex flex-col items-center md:items-start text-center md:text-left">
-            <div className="flex items-center gap-4 mb-2">
-              <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center border border-primary/20 shadow-[0_0_20px_rgba(var(--primary-rgb),0.1)]">
-                <ShieldCheck className="w-5 h-5 text-primary" />
-              </div>
-              <h1 className="font-display text-4xl font-black text-foreground tracking-tight">Strategy Editor</h1>
-            </div>
-            {activeStrategy ? (
-              <div className="flex items-center gap-3">
-                <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary/10 border border-primary/20">
-                  <Activity className="w-3 h-3 text-primary animate-pulse" />
-                  <span className="text-[10px] font-black text-primary uppercase tracking-[0.2em]">
-                    ACTIVE: {activeStrategy.name}
-                  </span>
-                </div>
-                <span className="text-[10px] font-mono text-muted-foreground opacity-50 uppercase tracking-widest">
-                  Hash: {activeStrategy.number}
+          <div>
+            <div className="flex items-center gap-3">
+              <h1 className="font-display text-3xl font-bold text-foreground">Strategy Editor</h1>
+              {activeStrategy && (
+                <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-primary/20 text-primary border border-primary/30 uppercase tracking-widest">
+                  #{activeStrategy.number} — {activeStrategy.name}
                 </span>
-              </div>
-            ) : (
-              <p className="text-sm text-muted-foreground font-medium uppercase tracking-widest opacity-60">
-                AI Agent Manifest Management
-              </p>
-            )}
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1 font-display">
+              Goal → AI &nbsp;|&nbsp; Rules → Local + On-chain Merkle Proof
+            </p>
           </div>
           <div className="flex items-center gap-3">
             {activeStrategy?.docLink && (
@@ -398,7 +366,7 @@ const Editor = () => {
                 href={activeStrategy.docLink}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="group flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary/10 text-primary font-display text-sm font-bold border border-primary/20 hover:bg-primary/20 transition-all shadow-[0_0_20px_rgba(var(--primary-rgb),0.05)]"
+                className="flex items-center gap-2 px-3 py-2 rounded-lg bg-primary/10 text-primary font-display text-xs font-semibold border border-primary/20 hover:bg-primary/20 transition-colors"
               >
                 <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
                 Strategy Report
@@ -409,18 +377,18 @@ const Editor = () => {
                 href={masterDocLink || "#"}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white/5 text-foreground font-display text-sm font-bold border border-white/10 hover:bg-white/10 transition-all"
+                className="flex items-center gap-2 px-3 py-2 rounded-lg bg-secondary text-foreground font-display text-xs font-semibold border border-border hover:bg-secondary/80 transition-colors"
               >
-                <List className="w-4 h-4 opacity-60" />
-                Index ({allStrategies.length})
+                <List className="w-3.5 h-3.5" />
+                Master Index ({allStrategies.length})
               </a>
             )}
             <button
               onClick={() => setNewStrategyOpen(true)}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground font-display text-sm font-black uppercase tracking-widest hover:brightness-110 active:scale-95 transition-all shadow-xl shadow-primary/20"
+              className="flex items-center gap-2 px-3 py-2 rounded-lg bg-green-500/10 text-green-400 font-display text-xs font-semibold border border-green-500/20 hover:bg-green-500/20 transition-colors"
             >
-              <PlusCircle className="w-4 h-4" />
-              New
+              <PlusCircle className="w-3.5 h-3.5" />
+              New Strategy
             </button>
           </div>
         </motion.div>
@@ -469,27 +437,23 @@ const Editor = () => {
           </div>
         ) : (
           <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="flex flex-col items-center justify-center min-h-[500px] text-center max-w-2xl mx-auto"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="flex flex-col items-center justify-center min-h-[400px] gap-6 text-center"
           >
-            <div className="relative mb-8">
-              <div className="absolute inset-0 bg-primary/20 blur-3xl rounded-full scale-150 animate-pulse" />
-              <div className="relative w-24 h-24 rounded-3xl bg-gradient-to-br from-primary/30 to-primary/10 flex items-center justify-center border border-primary/20 shadow-2xl shadow-primary/20">
-                <BookOpen className="w-12 h-12 text-primary" />
-              </div>
+            <BookOpen className="w-12 h-12 text-primary/40" />
+            <div>
+              <h2 className="font-display text-xl font-bold text-foreground">No Strategy Yet</h2>
+              <p className="text-sm text-muted-foreground mt-2 max-w-md">
+                Create your first strategy to get started. Each strategy gets its own dedicated Fileverse report tracking every AI proposal, rejection, and execution.
+              </p>
             </div>
-            <h2 className="font-display text-3xl font-black text-foreground tracking-tight mb-4">No Active Manifest</h2>
-            <p className="text-sm text-muted-foreground mb-10 leading-relaxed font-medium">
-              Initialize your first strategy to unlock the power of Privacy-First AI. Each manifest creates a dedicated dDoc report on Fileverse, ensuring total transparency while your rules remain encrypted and local.
-            </p>
             <button
               onClick={() => setNewStrategyOpen(true)}
-              className="flex items-center gap-3 px-8 py-4 rounded-2xl bg-primary text-primary-foreground font-display text-sm font-black uppercase tracking-[0.2em] hover:brightness-110 active:scale-95 transition-all shadow-2xl shadow-primary/20 group"
+              className="flex items-center gap-2 px-6 py-3 rounded-xl bg-primary text-primary-foreground font-bold hover:bg-primary/90 transition-colors"
             >
-              <PlusCircle className="w-5 h-5" />
+              <PlusCircle className="w-4 h-4" />
               Create First Strategy
-              <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
             </button>
           </motion.div>
         )}

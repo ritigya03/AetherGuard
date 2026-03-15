@@ -18,8 +18,8 @@
 
 import type { TradeProposal } from "./claude";
 
-const BASE = import.meta.env.VITE_FILEVERSE_API || "";
-const KEY  = import.meta.env.VITE_FILEVERSE_KEY  || "";
+const BASE = import.meta.env.VITE_FILEVERSE_API || "http://127.0.0.1:8001";
+const KEY  = import.meta.env.VITE_FILEVERSE_KEY  || "8R_TjebRrSkVT1YOx4ktUCrRLfwfwgz3";
 
 // ─── localStorage Key Namespace ───────────────────────────────────────────────
 
